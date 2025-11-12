@@ -1833,6 +1833,21 @@ visual overlay, or with the string TEXT if it is supplied."
     (while (re-search-forward "^#.*$" nil t)
       (org-drill-hide-region (match-beginning 0) (match-end 0)))))
 
+(defun org-drill-hide-drawers ()
+  "Hide all drawers in the current entry, including PROPERTIES drawer.
+This is more reliable than `org-cycle-hide-drawers' for drill display."
+  (save-excursion
+    (org-back-to-heading t)
+    (let ((end (save-excursion (org-end-of-subtree t t))))
+      (while (re-search-forward org-drawer-regexp end t)
+        (let* ((drawer-start (match-beginning 0))
+               (drawer-name (match-string 1))
+               (drawer-end (save-excursion
+                            (re-search-forward "^[ \t]*:END:[ \t]*$" end t)
+                            (point))))
+          (when drawer-end
+            (org-drill-hide-region drawer-start drawer-end)))))))
+
 (defun org-drill-unhide-text ()
   "Unhide text."
   (save-excursion
@@ -2031,7 +2046,7 @@ Note: does not actually alter the item."
      (org-drill--show-latex-fragments)  ; overlay all LaTeX fragments with images
      (ignore-errors
        (org-display-inline-images t))
-     (org-cycle-hide-drawers 'all)
+     (org-drill-hide-drawers)
      (prog1 (org-drill-presentation-prompt session)
        (org-drill-hide-subheadings-if 'org-drill-entry-p))))))
 
@@ -2052,7 +2067,7 @@ RESCHEDULE-FN is the function to reschedule."
            (org-drill--show-latex-fragments)
            (ignore-errors
              (org-display-inline-images t))
-           (org-cycle-hide-drawers 'all)
+           (org-drill-hide-drawers)
            (org-remove-latex-fragment-image-overlays)
            (save-excursion
              (org-mark-subtree)
@@ -2072,7 +2087,7 @@ RESCHEDULE-FN is the function to reschedule."
      (org-drill--show-latex-fragments)  ; overlay all LaTeX fragments with images
      (ignore-errors
        (org-display-inline-images t))
-     (org-cycle-hide-drawers 'all)
+     (org-drill-hide-drawers)
      (prog1 (org-drill-presentation-prompt-for-string session nil)
        (org-drill-hide-subheadings-if 'org-drill-entry-p))))))
 
@@ -2094,7 +2109,7 @@ RESCHEDULE-FN is the function to reschedule."
        (org-drill--show-latex-fragments)
        (ignore-errors
          (org-display-inline-images t))
-       (org-cycle-hide-drawers 'all)
+       (org-drill-hide-drawers)
        (prog1 (org-drill-presentation-prompt session)
          (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
 
@@ -2110,7 +2125,7 @@ RESCHEDULE-FN is the function to reschedule."
        (org-drill--show-latex-fragments)
        (ignore-errors
          (org-display-inline-images t))
-       (org-cycle-hide-drawers 'all)
+       (org-drill-hide-drawers)
        (prog1 (org-drill-presentation-prompt session)
          (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
 
@@ -2193,7 +2208,7 @@ items if FORCE-SHOW-FIRST or FORCE-SHOW-LAST is non-nil)."
       (org-drill--show-latex-fragments)
       (ignore-errors
         (org-display-inline-images t))
-      (org-cycle-hide-drawers 'all)
+      (org-drill-hide-drawers)
       (prog1 (org-drill-presentation-prompt session)
         (org-drill-hide-subheadings-if 'org-drill-entry-p)
         (org-drill-unhide-clozed-text))))))
@@ -2246,7 +2261,7 @@ the second to last, etc."
       (org-drill--show-latex-fragments)
       (ignore-errors
         (org-display-inline-images t))
-      (org-cycle-hide-drawers 'all)
+      (org-drill-hide-drawers)
       (prog1 (org-drill-presentation-prompt session)
         (org-drill-hide-subheadings-if 'org-drill-entry-p)
         (org-drill-unhide-clozed-text))))))
@@ -2366,7 +2381,7 @@ If ANSWER is supplied, set the session slot `drill-answer' to its value."
    (org-drill-with-replaced-entry-text
     (concat "\n" question)
     (org-drill-hide-all-subheadings-except nil)
-    (org-cycle-hide-drawers 'all)
+    (org-drill-hide-drawers)
     (ignore-errors
       (org-display-inline-images t))
     (prog1 (org-drill-presentation-prompt session)
@@ -2407,7 +2422,7 @@ See `org-drill' for more details."
       (save-restriction
         (org-narrow-to-subtree)
         (org-show-subtree)
-        (org-cycle-hide-drawers 'all)
+        (org-drill-hide-drawers)
 
         (let ((presentation-fn
                (cdr (assoc card-type org-drill-card-type-alist))))
@@ -3359,7 +3374,7 @@ returns its return value."
                (mood
                 (format "%s mood" mood))))
              infinitive translation)
-     (org-cycle-hide-drawers 'all)
+     (org-drill-hide-drawers)
      (funcall reschedule-fn session))))
 
 
@@ -3453,7 +3468,7 @@ returns its return value."
     (org-drill-with-replaced-entry-heading
      (format "Declensions of %s (%s) ==> %s\n\n"
              noun noun-gender translation)
-     (org-cycle-hide-drawers 'all)
+     (org-drill-hide-drawers)
      (funcall reschedule-fn session))))
 
 ;;; `spanish_verb' card type ==================================================
@@ -3508,7 +3523,7 @@ returns its return value."
                                "Spanish translation of this English verb.")
                 ;;reveal-headings '("Infinitive" "Future Perfect Tense" "Notes")
                 )))
-       (org-cycle-hide-drawers 'all)
+       (org-drill-hide-drawers)
        (prog1 (org-drill-presentation-prompt session prompt)
          (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
 
