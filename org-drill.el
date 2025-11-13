@@ -2618,9 +2618,12 @@ maximum number of items."
 
 (defun org-drill-pop-next-pending-entry (session)
   (cl-block org-drill-pop-next-pending-entry
-    (let ((m nil))
-      (while (or (null m)
-                 (not (org-drill-entry-p m)))
+    (let ((m nil)
+          (attempts 0)
+          (max-attempts 1000))  ; Safety limit to prevent infinite loop
+      (while (and (or (null m)
+                      (not (org-drill-entry-p m)))
+                  (< attempts max-attempts))
         (setq
          m
          (cond
@@ -2660,8 +2663,12 @@ maximum number of items."
           ((oref session again-entries)
            (pop (oref session again-entries)))
           (t                            ; nothing left -- return nil
-           (cl-return-from org-drill-pop-next-pending-entry nil)))))
-      m)))
+           (cl-return-from org-drill-pop-next-pending-entry nil))))
+        (cl-incf attempts))
+      ;; If we exhausted attempts trying to find a valid entry, return nil
+      (if (>= attempts max-attempts)
+          nil
+        m))))
 
 (defun org-drill-entries (session &optional resuming-p)
   "Returns nil, t, or a list of markers representing entries that were
