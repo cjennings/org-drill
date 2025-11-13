@@ -528,8 +528,53 @@ to preserve the formatting in a displayed table, for example."
   :group 'org-drill
   :type 'boolean)
 
+(defcustom org-drill-hide-modeline-during-session
+  t
+  "If non-nil, hide the modeline during drill sessions.
+This provides a cleaner, more focused display for reading drill cards.
+The modeline is automatically restored when the session ends."
+  :group 'org-drill
+  :type 'boolean)
+
+(defcustom org-drill-text-size-during-session
+  20
+  "Font size (in points) to use during drill sessions.
+Set to nil to use the default font size without scaling.
+Typical values are 16-24 for comfortable reading."
+  :group 'org-drill
+  :type '(choice (const :tag "Use default size" nil)
+                 (integer :tag "Font size in points")))
+
+(defcustom org-drill-use-variable-pitch
+  t
+  "If non-nil, use variable-pitch font during drill sessions.
+This can make text more readable for long-form content."
+  :group 'org-drill
+  :type 'boolean)
+
+(defvar org-drill--saved-modeline-format nil
+  "Saved modeline format before drill session started.")
+
+(defvar org-drill--saved-text-scale nil
+  "Saved text scale level before drill session started.")
+
+(defvar org-drill--saved-variable-pitch-mode nil
+  "Saved variable-pitch-mode state before drill session started.")
+
 (defvar org-drill-display-answer-hook nil
   "Hook called when `org-drill' answers are displayed.")
+
+(defvar org-drill-before-session-hook nil
+  "Hook run before starting a drill session.
+Called in the drill buffer after opening the file but before
+presenting the first card. Useful for setting up display preferences
+like fonts, text scale, or window layout.")
+
+(defvar org-drill-after-session-hook nil
+  "Hook run after ending a drill session.
+Called when the session ends normally, is quit by the user, or
+encounters an error. Useful for restoring display preferences
+or performing cleanup.")
 
 (defclass org-drill-session ()
   ((qualities :initform nil)
@@ -1848,6 +1893,44 @@ This is more reliable than `org-cycle-hide-drawers' for drill display."
           (when drawer-end
             (org-drill-hide-region drawer-start drawer-end)))))))
 
+(defun org-drill--setup-display ()
+  "Set up display settings for drill session.
+Saves current settings and applies drill-specific display preferences."
+  ;; Save current text scale and apply new size
+  (when org-drill-text-size-during-session
+    (setq org-drill--saved-text-scale
+          (face-attribute 'default :height nil 'default))
+    (set-face-attribute 'default nil :height (* org-drill-text-size-during-session 10)))
+
+  ;; Save and enable variable-pitch mode
+  (when org-drill-use-variable-pitch
+    (setq org-drill--saved-variable-pitch-mode
+          (if (boundp 'variable-pitch-mode) variable-pitch-mode nil))
+    (variable-pitch-mode 1))
+
+  ;; Save and hide modeline
+  (when org-drill-hide-modeline-during-session
+    (setq org-drill--saved-modeline-format mode-line-format)
+    (setq-local mode-line-format nil)))
+
+(defun org-drill--restore-display ()
+  "Restore display settings after drill session ends."
+  ;; Restore text size
+  (when org-drill--saved-text-scale
+    (set-face-attribute 'default nil :height org-drill--saved-text-scale)
+    (setq org-drill--saved-text-scale nil))
+
+  ;; Restore variable-pitch mode
+  (when (and org-drill-use-variable-pitch
+             (not (eq org-drill--saved-variable-pitch-mode 'unbound)))
+    (variable-pitch-mode (if org-drill--saved-variable-pitch-mode 1 -1))
+    (setq org-drill--saved-variable-pitch-mode nil))
+
+  ;; Restore modeline
+  (when org-drill--saved-modeline-format
+    (setq-local mode-line-format org-drill--saved-modeline-format)
+    (setq org-drill--saved-modeline-format nil)))
+
 (defun org-drill-unhide-text ()
   "Unhide text."
   (save-excursion
@@ -2954,6 +3037,10 @@ work correctly with older versions of org mode. Your org mode version (%s) appea
                       (length (oref session overdue-entries)))))
             (setf (oref session due-entry-count)
                   (org-drill-pending-entry-count session))
+            ;; Set up display and run before-session hook
+            (unless resume-p
+              (org-drill--setup-display)
+              (run-hooks 'org-drill-before-session-hook))
             (cond
              ((and (null (oref session current-item))
                    (null (oref session new-entries))
@@ -2969,6 +3056,9 @@ work correctly with older versions of org mode. Your org mode version (%s) appea
               (message nil)
               )))
         (progn
+          ;; Cleanup: restore display and run after-session hook
+          (org-drill--restore-display)
+          (run-hooks 'org-drill-after-session-hook)
           (unless (oref session end-pos)
             (setf (oref session cram-mode) nil)
             (org-drill-free-markers session (oref session done-entries))))))
