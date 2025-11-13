@@ -20,17 +20,6 @@
 
 *Fix:* Wrap timer cancellation in =unwind-protect= blocks and add error handling.
 
-*** TODO [#B] Fix docstring typo: "dasy" should be "days" (Line 876)
-:PROPERTIES:
-:LOCATION: org-drill.el:876
-:SEVERITY: B
-:END:
-
-Typo in docstring: "dasy" instead of "days"
-
-*Impact:* Documentation error confusing users and maintainers.
-
-*Fix:* Change "dasy" to "days"
 
 *** TODO [#B] Fix marker leak in error cases (Lines 2687-2700)
 :PROPERTIES:
@@ -622,3 +611,20 @@ Variable =m= may remain nil or invalid, creating infinite loop when all entries 
 - Increments attempts counter on each iteration
 
 *Resolution:* Fixed in commit fe73c80
+
+*** DONE [#B] Fix docstring typo: "dasy" should be "days"
+CLOSED: [2025-11-13 Wed]
+:PROPERTIES:
+:LOCATION: org-drill.el:925
+:SEVERITY: B
+:END:
+
+Typo in docstring: "dasy" instead of "days"
+
+*Impact:* Documentation error confusing users and maintainers.
+
+*Fix Applied:*
+- Changed "dasy" to "days" in docstring
+- Also improved docstring style from "Returns true" to "Return non-nil" (Emacs convention)
+
+*Resolution:* Fixed in commit 281cb65
