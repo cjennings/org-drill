@@ -8,7 +8,8 @@
 
 
 
-*** TODO [#B] Fix race condition with timer cleanup (Lines 1662-1665, 1768)
+*** DONE [#B] Fix race condition with timer cleanup (Lines 1662-1665, 1768)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:1662-1665,1768
 :SEVERITY: B
@@ -20,8 +21,11 @@
 
 *Fix:* Wrap timer cancellation in =unwind-protect= blocks and add error handling.
 
+*Resolution:* Wrapped recursive-edit in org-drill-presentation-prompt with unwind-protect to ensure timer is always cancelled even on abnormal exit. Commit 2fd6b66.
 
-*** TODO [#B] Fix marker leak in error cases (Lines 2687-2700)
+
+*** DONE [#B] Fix marker leak in error cases (Lines 2687-2700)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:2687-2700
 :SEVERITY: B
@@ -32,6 +36,8 @@
 *Impact:* Memory leaks in long-running Emacs sessions when drill sessions are interrupted.
 
 *Fix:* Use =unwind-protect= to ensure markers are always freed.
+
+*Resolution:* Moved org-drill-free-markers call outside conditional block to always free done-entries markers even on error or suspension. Commit 2fd6b66.
 
 ** SEVERITY C - MEDIUM PRIORITY ISSUES
 
