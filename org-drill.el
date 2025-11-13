@@ -701,11 +701,14 @@ regardless of whether the test was successful.")
 (when (version< org-version "9.2")
   (advice-add 'org-get-tags :around #'org-drill-get-tags-advice))
 
-(defun org-drill-get-tags-advice (_orig-fun &rest args)
+(defun org-drill-get-tags-advice (orig-fun &rest args)
   ;; the two arg call obsoletes get-local-tags
   (if (= 2 (length args))
       ;; and we don't want any byte compile errors
-      (if (fboundp 'org-get-local-tags) (org-get-local-tags))
+      (if (fboundp 'org-get-local-tags)
+          (org-get-local-tags)
+        ;; Fallback to original function if org-get-local-tags doesn't exist
+        (apply orig-fun args))
     ;; the non-arg version doesn't return inherited tags, but
     ;; org-get-tags does.
     (org-get-tags)))
