@@ -1031,6 +1031,22 @@ in the matrix."
     (- optimal-factor
        (* delta-ofmax (/ days-ahead (+ days-ahead (* 0.6 optimal-interval)))))))
 
+(defun org-drill--safe-read-learn-data (learn-str)
+  "Safely parse LEARN_DATA string, validating it contains only numbers.
+Returns the parsed list or nil if invalid or unsafe."
+  (when (and learn-str (stringp learn-str))
+    (condition-case nil
+        (let ((data (car (read-from-string learn-str))))
+          ;; Validate it's a list of at least 3 elements
+          (when (and (listp data)
+                     (>= (length data) 3)
+                     ;; Validate first 3 elements are numbers
+                     (numberp (nth 0 data))
+                     (numberp (nth 1 data))
+                     (numberp (nth 2 data)))
+            data))
+      (error nil))))
+
 (defun org-drill-get-item-data ()
   "Returns a list of 6 items, containing all the stored recall
   data for the item at point:
@@ -1048,15 +1064,24 @@ in the matrix."
         (repeats (org-drill-entry-total-repeats :missing)))
     (cond
      (learn-str
-      (let ((learn-data (and learn-str
-                             (read learn-str))))
-        (list (nth 0 learn-data)        ; last interval
-              (nth 1 learn-data)        ; repetitions
-              (org-drill-entry-failure-count)
-              (nth 1 learn-data)
-              (org-drill-entry-last-quality)
-              (nth 2 learn-data)        ; EF
-              )))
+      (let ((learn-data (org-drill--safe-read-learn-data learn-str)))
+        (if learn-data
+            (list (nth 0 learn-data)        ; last interval
+                  (nth 1 learn-data)        ; repetitions
+                  (org-drill-entry-failure-count)
+                  (nth 1 learn-data)
+                  (org-drill-entry-last-quality)
+                  (nth 2 learn-data))       ; EF
+          ;; If LEARN_DATA is invalid/unsafe, fall through to next case
+          (if (not (eql :missing repeats))
+              (list (org-drill-entry-last-interval)
+                    (org-drill-entry-repeats-since-fail)
+                    (org-drill-entry-failure-count)
+                    (org-drill-entry-total-repeats)
+                    (org-drill-entry-average-quality)
+                    (org-drill-entry-ease))
+            ;; Virgin item
+            (list 0 0 0 0 nil nil)))))
      ((not (eql :missing repeats))
       (list (org-drill-entry-last-interval)
             (org-drill-entry-repeats-since-fail)
@@ -1350,7 +1375,7 @@ item will be scheduled exactly this many days into the future."
         ;; Useful for entries which randomly present any of several facts.
         (weight (org-entry-get (point) "DRILL_CARD_WEIGHT")))
     (if (stringp weight)
-        (setq weight (read weight)))
+        (setq weight (string-to-number weight)))
     (cl-destructuring-bind (last-interval repetitions failures
                                        total-repeats meanq ease)
         (org-drill-get-item-data)
@@ -1403,7 +1428,7 @@ of QUALITY."
                                        total-repeats meanq ease)
         (org-drill-get-item-data)
       (if (stringp weight)
-          (setq weight (read weight)))
+          (setq weight (string-to-number weight)))
       (cl-destructuring-bind (next-interval _repetitions _ease
                                          _failures _meanq _total-repeats
                                          &optional _ofmatrix)
@@ -2835,7 +2860,7 @@ that many days)."
       (- (org-time-stamp-to-now timestamp)))
      (use-last-interval-p
       (+ (or (org-drill-entry-days-overdue session) 0)
-         (read (or (org-entry-get (point) "DRILL_LAST_INTERVAL") "0"))))
+         (string-to-number (or (org-entry-get (point) "DRILL_LAST_INTERVAL") "0"))))
      (t nil))))
 
 (defun org-drill-entry-status (session)
