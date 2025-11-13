@@ -114,7 +114,7 @@ really sensible."
   10
   "The maximum percentage of items that can be forgotten before a warning.
 
-What percentage of items do you consider it is 'acceptable' to
+What percentage of items do you consider it is \\='acceptable\\=' to
 forget each drill session? The default is 10%.  A warning message
 is displayed at the end of the session if the percentage forgotten
 climbs above this number."
@@ -126,13 +126,13 @@ climbs above this number."
   "Threshold before a item is defined as a leech.
 
 If an item is forgotten more than this many times, it is tagged
-as a 'leech' item."
+as a \\='leech\\=' item."
   :group 'org-drill
   :type '(choice integer (const nil)))
 
 (defcustom org-drill-leech-method
   'skip
-  "How should 'leech items' be handled during drill sessions?
+  "How should \\='leech items\\=' be handled during drill sessions?
 Possible values:
 - nil :: Leech items are treated the same as normal items.
 - skip :: Leech items are not included in drill sessions.
@@ -168,7 +168,7 @@ Possible values:
   "If non-nil, conceal headings during a drill session.
 
 You may want to enable this behaviour if item headings or tags
-contain information that could 'give away' the answer."
+contain information that could \\='give away\\=' the answer."
   :group 'org-drill
   :type 'boolean)
 
@@ -311,7 +311,7 @@ that argument is a function of no arguments, which when called,
 prompts the user to rate their recall and performs rescheduling
 of the drill item.  ANSWER-FN is called with the point on the
 active item's heading, just prior to displaying the item's
-'answer'.  It can therefore be used to modify the appearance of
+\\='answer\\='.  It can therefore be used to modify the appearance of
 the answer.  ANSWER-FN must call its argument before returning.
 
 When supplied, DRILL-EMPTY-P is a boolean value, default nil.
@@ -394,7 +394,7 @@ Available choices are:
 - SM5 :: the SM5 algorithm, used in SuperMemo 5.0
 - Simple8 :: a modified version of the SM8 algorithm.  SM8 is used in
   SuperMemo 98. The version implemented here is simplified in that while it
-  'learns' the difficulty of each item using quality grades and number of
+  \\='learns\\=' the difficulty of each item using quality grades and number of
   failures, it does not modify the matrix of values that
   governs how fast the inter-repetition intervals increase.  A method for
   adjusting intervals when items are reviewed early or late has been taken
@@ -447,8 +447,8 @@ is used."
 
 (defcustom org-drill-cloze-text-weight
   4
-  "For card types 'hide1_firstmore', 'show1_lastmore' and 'show1_firstless',
-this number determines how often the 'less favoured' situation
+  "For card types \\='hide1_firstmore\\=', \\='show1_lastmore\\=' and \\='show1_firstless\\=',
+this number determines how often the \\='less favoured\\=' situation
 should arise. It will occur 1 in every N trials, where N is the
 value of the variable.
 
@@ -487,7 +487,7 @@ they were reviewed at least this many hours ago."
 (defcustom org-drill-days-before-old
   10
   "When an item's inter-repetition interval rises above this value in days,
-it is no longer considered a 'young' (recently learned) item."
+it is no longer considered a \\='young\\=' (recently learned) item."
   :group 'org-drill
   :type 'integer)
 
@@ -546,7 +546,7 @@ Typical values are 16-24 for comfortable reading."
                  (integer :tag "Font size in points")))
 
 (defcustom org-drill-use-variable-pitch
-  t
+  nil
   "If non-nil, use variable-pitch font during drill sessions.
 This can make text more readable for long-form content."
   :group 'org-drill
@@ -658,9 +658,9 @@ This variable is not functionally important, but is used for
     "DRILL_EASE" "DRILL_LAST_QUALITY" "DRILL_LAST_REVIEWED"))
 
 (defvar org-drill--lapse-very-overdue-entries-p nil
-  "If non-nil, entries more than 90 days overdue are regarded as 'lapsed'.
+  "If non-nil, entries more than 90 days overdue are regarded as \\='lapsed\\='.
 This means that when the item is eventually re-tested it will be
-treated as 'failed' (quality 2) for rescheduling purposes,
+treated as \\='failed\\=' (quality 2) for rescheduling purposes,
 regardless of whether the test was successful.")
 
 
@@ -701,20 +701,21 @@ regardless of whether the test was successful.")
 (when (version< org-version "9.2")
   (advice-add 'org-get-tags :around #'org-drill-get-tags-advice))
 
-(defun org-drill-get-tags-advice (orig-fun &rest args)
+(defun org-drill-get-tags-advice (_orig-fun &rest args)
   ;; the two arg call obsoletes get-local-tags
   (if (= 2 (length args))
       ;; and we don't want any byte compile errors
       (if (fboundp 'org-get-local-tags) (org-get-local-tags))
     ;; the non-arg version doesn't return inherited tags, but
-    ;; get-tags-at does.
-    (org-get-tags-at)))
+    ;; org-get-tags does.
+    (org-get-tags)))
 
-(when (= 8 (car (version-to-list org-version)))
-  ;; Shut up package-lint
-  (defalias 'org-drill-defun 'defun)
-  (org-drill-defun org-toggle-latex-fragment (&rest args)
-    (apply 'org-preview-latex-fragment args)))
+(with-no-warnings
+  (when (= 8 (car (version-to-list org-version)))
+    ;; Shut up package-lint - compatibility shim for org 8.x (package requires org >= 9.3)
+    (defalias 'org-drill-defun 'defun)
+    (org-drill-defun org-latex-preview (&rest args)
+      (apply 'org-preview-latex-fragment args))))
 
 ;;;; Utilities ================================================================
 (defmacro org-drill-pop-random (place)
@@ -835,7 +836,7 @@ in hours rather than days."
           (* 60 60))))))
 
 (defun org-drill-entry-p (&optional marker)
-  "Is MARKER, or the point, in a 'drill item'? This will return nil if
+  "Is MARKER, or the point, in a \\='drill item\\='? This will return nil if
 the point is inside a subheading of a drill item -- to handle that
 situation use `org-part-of-drill-entry-p'."
   (save-excursion
@@ -849,7 +850,7 @@ situation use `org-part-of-drill-entry-p'."
   (goto-char marker))
 
 (defun org-drill-part-of-drill-entry-p ()
-  "Is the current entry either the main heading of a 'drill item',
+  "Is the current entry either the main heading of a \\='drill item\\=',
 or a subheading within a drill item?"
   (or (org-drill-entry-p)
       ;; Does this heading INHERIT the drill tag
@@ -867,7 +868,7 @@ drill entry."
       (error "Cannot find a parent heading that is marked as a drill entry"))))
 
 (defun org-drill-entry-leech-p ()
-  "Is the current entry a 'leech item'?"
+  "Is the current entry a \\='leech item\\='?"
   (and (org-drill-entry-p)
        (member "leech" (org-get-tags nil t))))
 
@@ -920,7 +921,7 @@ drill entry."
 (defun org-drill-entry-overdue-p (session &optional days-overdue last-interval)
   "Returns true if entry that is scheduled DAYS-OVERDUE dasy in the past,
 and whose last inter-repetition interval was LAST-INTERVAL, should be
-considered 'overdue'. If the arguments are not given they are extracted
+considered \\='overdue\\='. If the arguments are not given they are extracted
 from the entry at point."
   (unless days-overdue
     (setq days-overdue (org-drill-entry-days-overdue session)))
@@ -1087,10 +1088,11 @@ in the matrix."
   "Arguments:
 - LAST-INTERVAL -- the number of days since the item was last reviewed.
 - REPEATS -- the number of times the item has been successfully reviewed
-- EF -- the 'easiness factor'
+- EF -- the \\='easiness factor\\='
 - QUALITY -- 0 to 5
 
-Returns a list: (INTERVAL REPEATS EF FAILURES MEAN TOTAL-REPEATS OFMATRIX), where:
+Returns a list:
+  (INTERVAL REPEATS EF FAILURES MEAN TOTAL-REPEATS OFMATRIX), where:
 - INTERVAL is the number of days until the item should next be reviewed
 - REPEATS is incremented by 1.
 - EF is modified based on the recall quality for the item.
@@ -1270,7 +1272,7 @@ to a mean item quality of QUALITY."
   "Arguments:
 - LAST-INTERVAL -- the number of days since the item was last reviewed.
 - REPEATS -- the number of times the item has been successfully reviewed
-- EASE -- the 'easiness factor'
+- EASE -- the \\='easiness factor\\='
 - QUALITY -- 0 to 5
 - DELTA-DAYS -- how many days overdue was the item when it was reviewed.
   0 = reviewed on the scheduled day. +N = N days overdue.
@@ -1541,7 +1543,7 @@ of QUALITY."
 ;;   (let ((drill-entry-level (org-current-level))
 ;;         (drill-sections nil)
 ;;         (drill-heading nil))
-;;     (org-show-subtree)
+;;     (org-fold-show-subtree)
 ;;     (save-excursion
 ;;       (org-map-entries
 ;;        (lambda ()
@@ -1564,7 +1566,7 @@ Returns a list containing the position of each immediate subheading of
 the current topic."
   (let ((drill-entry-level (org-current-level))
         (drill-sections nil))
-    (org-show-subtree)
+    (org-fold-show-subtree)
     (save-excursion
       (org-map-entries
        (lambda ()
@@ -1768,8 +1770,7 @@ Consider reformulating the item to make it easier to remember.\n"
 (defun org-drill-response-get-buffer-create ()
   "Create a response buffer."
   (let ((local-current-input-method
-         current-input-method)
-        (cb (current-buffer)))
+         current-input-method))
     (with-current-buffer
         (get-buffer-create "*Org-Drill*")
       (erase-buffer)
@@ -1852,7 +1853,7 @@ If non-nil, returns (BEG . END) where beginning and end of the match are."
     (org-in-regexp regexp nlines)))
 
 (defun org-drill-hide-region (beg end &optional text)
-  "Hide the buffer region between BEG and END with an 'invisible text'
+  "Hide the buffer region between BEG and END with an \\='invisible text\\='
 visual overlay, or with the string TEXT if it is supplied."
   (let ((ovl (make-overlay beg end)))
     (overlay-put ovl 'category
@@ -1886,7 +1887,6 @@ This is more reliable than `org-cycle-hide-drawers' for drill display."
     (let ((end (save-excursion (org-end-of-subtree t t))))
       (while (re-search-forward org-drawer-regexp end t)
         (let* ((drawer-start (match-beginning 0))
-               (drawer-name (match-string 1))
                (drawer-end (save-excursion
                             (re-search-forward "^[ \t]*:END:[ \t]*$" end t)
                             (point))))
@@ -1949,13 +1949,13 @@ Saves current settings and applies drill-specific display preferences."
       ;; - the contents of SRC blocks
       (unless (save-match-data
                 (or (org-drill-pos-in-regexp (match-beginning 0)
-                                       org-bracket-link-regexp 1)
+                                       org-link-bracket-re 1)
                     (org-in-src-block-p)
                     (org-inside-LaTeX-fragment-p)))
         (org-drill-hide-matched-cloze-text)))))
 
 (defun org-drill-hide-matched-cloze-text ()
-  "Hide the current match with a 'cloze' visual overlay."
+  "Hide the current match with a \\='cloze\\=' visual overlay."
   (let ((ovl (make-overlay (match-beginning 0) (match-end 0)))
         (hint-sep-pos (string-match-p (regexp-quote org-drill-hint-separator)
                                       (match-string 0))))
@@ -1992,7 +1992,7 @@ Saves current settings and applies drill-specific display preferences."
     (while (re-search-forward org-drill-cloze-regexp nil t)
       (unless (or (save-match-data
                     (org-drill-pos-in-regexp (match-beginning 0)
-                                       org-bracket-link-regexp 1))
+                                       org-link-bracket-re 1))
                   (null (match-beginning 2))) ; hint subexpression matched
         (org-drill-hide-region (match-beginning 2) (match-end 2))))))
 
@@ -2151,7 +2151,7 @@ RESCHEDULE-FN is the function to reschedule."
            (ignore-errors
              (org-display-inline-images t))
            (org-drill-hide-drawers)
-           (org-remove-latex-fragment-image-overlays)
+           (org-clear-latex-preview)
            (save-excursion
              (org-mark-subtree)
              (let ((beg (region-beginning))
@@ -2176,8 +2176,8 @@ RESCHEDULE-FN is the function to reschedule."
 
 (defun org-drill--show-latex-fragments ()
   "Show latex fragment."
-  (org-remove-latex-fragment-image-overlays)
-  (org-toggle-latex-fragment '(16)))
+  (org-clear-latex-preview)
+  (org-latex-preview '(16)))
 
 (defun org-drill-present-two-sided-card (session)
   (org-drill-with-hidden-comments
@@ -2188,7 +2188,7 @@ RESCHEDULE-FN is the function to reschedule."
          (save-excursion
            (goto-char (nth (cl-random (min 2 (length drill-sections)))
                            drill-sections))
-           (org-show-subtree)))
+           (org-fold-show-subtree)))
        (org-drill--show-latex-fragments)
        (ignore-errors
          (org-display-inline-images t))
@@ -2204,7 +2204,7 @@ RESCHEDULE-FN is the function to reschedule."
        (when drill-sections
          (save-excursion
            (goto-char (nth (cl-random (length drill-sections)) drill-sections))
-           (org-show-subtree)))
+           (org-fold-show-subtree)))
        (org-drill--show-latex-fragments)
        (ignore-errors
          (org-display-inline-images t))
@@ -2246,7 +2246,7 @@ items if FORCE-SHOW-FIRST or FORCE-SHOW-LAST is non-nil)."
         (while (re-search-forward org-drill-cloze-regexp item-end t)
           (let ((in-regexp? (save-match-data
                               (org-drill-pos-in-regexp (match-beginning 0)
-                                                 org-bracket-link-regexp 1))))
+                                                 org-link-bracket-re 1))))
             (unless (or in-regexp?
                         (org-inside-LaTeX-fragment-p))
               (cl-incf match-count)))))
@@ -2277,7 +2277,7 @@ items if FORCE-SHOW-FIRST or FORCE-SHOW-LAST is non-nil)."
             (while (re-search-forward org-drill-cloze-regexp item-end t)
               (unless (save-match-data
                         (or (org-drill-pos-in-regexp (match-beginning 0)
-                                               org-bracket-link-regexp 1)
+                                               org-link-bracket-re 1)
                             (org-inside-LaTeX-fragment-p)))
                 (cl-incf cnt)
                 (if (memq cnt match-nums)
@@ -2286,7 +2286,7 @@ items if FORCE-SHOW-FIRST or FORCE-SHOW-LAST is non-nil)."
       ;;  do (re-search-forward org-drill-cloze-regexp
       ;;                        item-end t pos-to-hide)
       ;;  while (org-drill-pos-in-regexp (match-beginning 0)
-      ;;                           org-bracket-link-regexp 1))
+      ;;                           org-link-bracket-re 1))
       ;; (org-drill-hide-matched-cloze-text)))))
       (org-drill--show-latex-fragments)
       (ignore-errors
@@ -2316,7 +2316,7 @@ the second to last, etc."
         (while (re-search-forward org-drill-cloze-regexp item-end t)
           (let ((in-regexp? (save-match-data
                               (org-drill-pos-in-regexp (match-beginning 0)
-                                                 org-bracket-link-regexp 1))))
+                                                 org-link-bracket-re 1))))
             (unless (or in-regexp?
                         (org-inside-LaTeX-fragment-p))
               (cl-incf match-count)))))
@@ -2336,7 +2336,7 @@ the second to last, etc."
                       ;; org link, or if it occurs inside a LaTeX math
                       ;; fragment
                       (or (org-drill-pos-in-regexp (match-beginning 0)
-                                             org-bracket-link-regexp 1)
+                                             org-link-bracket-re 1)
                           (org-inside-LaTeX-fragment-p)))
               (cl-incf cnt)
               (if (= cnt to-hide)
@@ -2372,7 +2372,7 @@ chosen at random."
 cloze deletion. Uncommonly, hide one of the other pieces of text,
 chosen at random.
 
-The definitions of 'commonly' and 'uncommonly' are determined by
+The definitions of \\='commonly\\=' and \\='uncommonly\\=' are determined by
 the value of `org-drill-cloze-text-weight'."
   ;; The 'firstmore' and 'lastmore' functions used to randomly choose whether
   ;; to hide the 'favoured' piece of text. However even when the chance of
@@ -2398,11 +2398,11 @@ the value of `org-drill-cloze-text-weight'."
 
 (defun org-drill-present-multicloze-show1-lastmore (session)
   "Commonly, hides all pieces except the last. Uncommonly, shows
-any random piece. The effect is similar to 'show1cloze' except
+any random piece. The effect is similar to \\='show1cloze\\=' except
 that the last item is much less likely to be the item that is
 visible.
 
-The definitions of 'commonly' and 'uncommonly' are determined by
+The definitions of \\='commonly\\=' and \\='uncommonly\\=' are determined by
 the value of `org-drill-cloze-text-weight'."
   (cond
    ((null org-drill-cloze-text-weight)
@@ -2423,11 +2423,11 @@ the value of `org-drill-cloze-text-weight'."
 (defun org-drill-present-multicloze-show1-firstless (session)
   "Commonly, hides all pieces except one, where the shown piece
 is guaranteed NOT to be the first piece. Uncommonly, shows any
-random piece. The effect is similar to 'show1cloze' except that
+random piece. The effect is similar to \\='show1cloze\\=' except that
 the first item is much less likely to be the item that is
 visible.
 
-The definitions of 'commonly' and 'uncommonly' are determined by
+The definitions of \\='commonly\\=' and \\='uncommonly\\=' are determined by
 the value of `org-drill-cloze-text-weight'."
   (cond
    ((null org-drill-cloze-text-weight)
@@ -2473,7 +2473,7 @@ If ANSWER is supplied, set the session slot `drill-answer' to its value."
 (defun org-drill-entry (session)
   "Present the current topic for interactive review, as in `org-drill'.
 Review will occur regardless of whether the topic is due for review or whether
-it meets the definition of a 'review topic' used by `org-drill'.
+it meets the definition of a \\='review topic\\=' used by `org-drill'.
 
 Returns a quality rating from 0 to 5, or nil if the user quit, or the symbol
 EDIT if the user chose to exit the drill and edit the current item. Choosing
@@ -2496,15 +2496,14 @@ See `org-drill' for more details."
   ;;  (org-back-to-heading))
   (let ((card-type (org-entry-get (point) "DRILL_CARD_TYPE" t))
         (answer-fn 'org-drill-present-default-answer)
-        (cont nil)
-        ;; fontification functions in `outline-view-change-hook' can cause big
-        ;; slowdowns, so we temporarily bind this variable to nil here.
-        (outline-view-change-hook nil))
+        (cont nil))
+    ;; fontification functions in `outline-view-change-hook' (obsolete in Emacs 29.1)
+    ;; can cause big slowdowns, so we no longer bind it since we require modern Emacs
     (setf (oref session drill-answer) nil)
     (org-save-outline-visibility t
       (save-restriction
         (org-narrow-to-subtree)
-        (org-show-subtree)
+        (org-fold-show-subtree)
         (org-drill-hide-drawers)
 
         (let ((presentation-fn
@@ -2637,7 +2636,7 @@ maximum number of items."
 
 (defun org-drill-entries (session &optional resuming-p)
   "Returns nil, t, or a list of markers representing entries that were
-'failed' and need to be presented again before the session ends.
+\\='failed\\=' and need to be presented again before the session ends.
 
 RESUMING-P is true if we are resuming a suspended drill session."
   (cl-block org-drill-entries
@@ -2667,7 +2666,7 @@ RESUMING-P is true if we are resuming a suspended drill session."
             (sit-for 0.3)
             nil)
            (t
-            (org-show-entry)
+            (org-fold-show-entry)
             (let ((result (org-drill-entry session)))
               (cond
                ((null result)
@@ -2784,7 +2783,7 @@ order to make items appear more frequently over time."
 
 (defun org-drill-free-markers (session markers)
   "MARKERS is a list of markers, all of which will be freed (set to
-point nowhere). Alternatively, MARKERS can be 't', in which case
+point nowhere). Alternatively, MARKERS can be \\='t\\=', in which case
 all the markers used by Org-Drill will be freed."
   (dolist (m (if (eql t markers)
                  (append  (oref session done-entries)
@@ -2955,9 +2954,9 @@ STATUS is one of the following values:
 
 ;;;###autoload
 (defun org-drill (&optional scope drill-match resume-p cram)
-  "Begin an interactive 'drill session'. The user is asked to
+  "Begin an interactive \\='drill session\\='. The user is asked to
 review a series of topics (headers). Each topic is initially
-presented as a 'question', often with part of the topic content
+presented as a \\='question\\=', often with part of the topic content
 hidden. The user attempts to recall the hidden information or
 answer the question, then presses a key to reveal the answer. The
 user then rates his or her recall or performance on that
@@ -3067,7 +3066,7 @@ work correctly with older versions of org mode. Your org mode version (%s) appea
       (when (markerp (oref session end-pos))
         (org-drill-goto-entry (oref session end-pos))
         (org-reveal)
-        (org-show-entry))
+        (org-fold-show-entry))
       (let ((keystr (org-drill-command-keybinding-to-string 'org-drill-resume)))
         (message
          "You can continue the drill session with the command `org-drill-resume'.%s"
@@ -3086,7 +3085,7 @@ work correctly with older versions of org mode. Your org mode version (%s) appea
 
 ;;;###autoload
 (defun org-drill-cram (&optional scope drill-match)
-  "Run an interactive drill session in 'cram mode'. In cram mode,
+  "Run an interactive drill session in \\='cram mode\\='. In cram mode,
 all drill items are considered to be due for review, unless they
 have been reviewed within the last `org-drill-cram-hours'
 hours."
@@ -3094,7 +3093,7 @@ hours."
   (org-drill scope drill-match nil t))
 
 (defun org-drill-cram-tree ()
-  "Run  an interactive drill session in 'cram mode' using subtree at point.
+  "Run  an interactive drill session in \\='cram mode\\=' using subtree at point.
 
 See also, `org-drill-cram' and `org-drill-tree'."
   (interactive)
@@ -3156,7 +3155,7 @@ need reviewing.  Start a new drill session? "
 (defun org-drill-relearn-item ()
   "Make the current item due for revision, and set its last interval to 0.
 Makes the item behave as if it has been failed, without actually recording a
-failure. This command can be used to 'reset' repetitions for an item."
+failure. This command can be used to \\='reset\\=' repetitions for an item."
   (interactive)
   (org-drill-smart-reschedule 4 0))
 
@@ -3224,7 +3223,7 @@ values as `org-drill-scope'."
 
 (defun org-drill-copy-entry-to-other-buffer (dest &optional path)
   "Copy the subtree at point to the buffer DEST. The copy will receive
-the tag 'imported'."
+the tag \\='imported\\='."
   (cl-block org-drill-copy-entry-to-other-buffer
     (save-excursion
       (let ((m nil))
@@ -3421,7 +3420,7 @@ the name of the tense.")
     (list infinitive inf-hint translation tense mood)))
 
 (defun org-drill-present-verb-conjugation (session)
-  "Present a drill entry whose card type is 'conjugate'."
+  "Present a drill entry whose card type is \\='conjugate\\='."
   (cl-flet ((tense-and-mood-to-string
              (tense mood)
              (cond
@@ -3448,7 +3447,7 @@ and conjugate for the %s.\n\n"
                  (tense-and-mood-to-string tense mood))))))))
 
 (defun org-drill-show-answer-verb-conjugation (session reschedule-fn)
- "Show the answer for a drill item whose card type is 'conjugate'.
+ "Show the answer for a drill item whose card type is \\='conjugate\\='.
 RESCHEDULE-FN must be a function that calls `org-drill-reschedule' and
 returns its return value."
   (cl-destructuring-bind (infinitive _inf-hint translation tense mood)
@@ -3513,7 +3512,7 @@ returns its return value."
     (list noun noun-root noun-gender noun-hint translation)))
 
 (defun org-drill-present-noun-declension (session)
-  "Present a drill entry whose card type is 'decline_noun'."
+  "Present a drill entry whose card type is \\='decline_noun\\='."
   (cl-destructuring-bind (noun _noun-root noun-gender noun-hint translation)
       (org-drill-get-noun-info)
     (let* ((props (org-entry-properties (point)))
@@ -3550,7 +3549,7 @@ and list its declensions%s.\n\n"
                    ""))))))))
 
 (defun org-drill-show-answer-noun-declension (session reschedule-fn)
-  "Show the answer for a drill item whose card type is 'decline_noun'.
+  "Show the answer for a drill item whose card type is \\='decline_noun\\='.
 RESCHEDULE-FN must be a function that calls `org-drill-reschedule' and
 returns its return value."
   (cl-destructuring-bind (noun _noun-root noun-gender _noun-hint translation)
@@ -3744,7 +3743,7 @@ Returns a list of strings."
       (`(edit ,loc)
        (org-drill-goto-entry loc)
        (org-reveal)
-       (org-show-entry))
+       (org-fold-show-entry))
       (`,_
        (message "Finished Leitner Learning: %s complete today, %s in process, %s to start"
                 org-drill-leitner-completed
@@ -3938,7 +3937,7 @@ shuffling is done in place."
                            #'org-drill-test-display-rescheduler))
     (org-toggle-tag "zysygy")))
 
-(defun org-drill-test-display-rescheduler (session)
+(defun org-drill-test-display-rescheduler (_session)
   (run-hooks 'org-drill-display-answer-hook)
   ;; Normally, the rescheduler waits for input at this point
   (read-key-sequence "Press anything to continue"))
