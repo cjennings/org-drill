@@ -3,22 +3,6 @@
 
 
 
-*** TODO [#A] Fix missing return value in org-drill-get-tags-advice (Line 663)
-:PROPERTIES:
-:LOCATION: org-drill.el:659-666
-:SEVERITY: A
-:END:
-
-Function doesn't return a value when =(= 2 (length args))= is true but =org-get-local-tags= doesn't exist.
-
-*Impact:* In older org-mode versions, returns nil instead of falling back to original function, breaking tag functionality.
-
-*Fix:* Add fallback to original function:
-#+begin_src elisp
-(if (fboundp 'org-get-local-tags)
-    (org-get-local-tags)
-  (apply orig-fun args))
-#+end_src
 
 ** SEVERITY B - HIGH PRIORITY BUGS
 
@@ -606,3 +590,21 @@ Using =read= function on property values without sanitization. Major security vu
   - Falls back to safe defaults if LEARN_DATA is corrupted
 
 *Resolution:* Fixed in commit 9d9c0be
+
+*** DONE [#A] Fix missing return value in org-drill-get-tags-advice
+CLOSED: [2025-11-13 Wed]
+:PROPERTIES:
+:LOCATION: org-drill.el:704-714
+:SEVERITY: A
+:END:
+
+Function didn't return a value when =(= 2 (length args))= is true but =org-get-local-tags= doesn't exist.
+
+*Impact:* In older org-mode versions, returns nil instead of falling back to original function, breaking tag functionality.
+
+*Fix Applied:*
+- Removed underscore from =orig-fun= parameter (now used)
+- Added else clause to fallback to =(apply orig-fun args)= when =org-get-local-tags= doesn't exist
+- Added explanatory comment
+
+*Resolution:* Fixed in commit df3a67f
