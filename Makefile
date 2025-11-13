@@ -26,7 +26,9 @@ endif
 
 # Test directories and files
 TEST_DIR = tests
-UNIT_TESTS = $(filter-out $(TEST_DIR)/%-integration-test.el, $(wildcard $(TEST_DIR)/*-test.el))
+# Match test-*.el pattern, excluding integration tests
+UNIT_TESTS = $(filter-out $(TEST_DIR)/%integration-test.el, \
+               $(wildcard $(TEST_DIR)/test-*.el))
 INTEGRATION_TESTS = $(wildcard $(TEST_DIR)/*-integration-test.el)
 ALL_TESTS = $(UNIT_TESTS) $(INTEGRATION_TESTS)
 
