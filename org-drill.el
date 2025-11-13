@@ -932,6 +932,7 @@ from the entry at point."
     (setq last-interval (org-drill-entry-last-interval 1)))
   (and (numberp days-overdue)
        (> days-overdue 1)               ; enforce a sane minimum 'overdue' gap
+       (> last-interval 0)              ; prevent division by zero
        ;;(> due org-drill-days-before-overdue)
        (> (/ (+ days-overdue last-interval 1.0) last-interval)
           org-drill-overdue-interval-factor)))
