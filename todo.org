@@ -1,17 +1,6 @@
 * Org Drill Open Work
 ** SEVERITY A - CRITICAL BUGS
 
-*** TODO [#A] Fix typo in EIEIO class slot definition (Line 567)
-:PROPERTIES:
-:LOCATION: org-drill.el:567
-:SEVERITY: A
-:END:
-
-Misspelled =:documeentation= instead of =:documentation= in the =cram-mode= slot definition.
-
-*Impact:* EIEIO fails to recognize slot documentation. May cause issues with introspection and help systems.
-
-*Fix:* Change =:documeentation= to =:documentation=
 
 *** TODO [#A] Replace unsafe use of read() with safer alternatives (Lines 1006, 1306, 1359, 2741)
 :PROPERTIES:
@@ -594,3 +583,18 @@ Record and attach audio clips to cards (useful for language learning).
 Automatically generate speech from card text for listening practice.
 
 * Org Drill Resolved Work
+
+*** DONE [#A] Fix typo in EIEIO class slot definition (Line 612)
+CLOSED: [2025-11-13 Wed]
+:PROPERTIES:
+:LOCATION: org-drill.el:612
+:SEVERITY: A
+:END:
+
+Misspelled =:documementation= instead of =:documentation= in the =cram-mode= slot definition.
+
+*Impact:* EIEIO fails to recognize slot documentation. May cause issues with introspection and help systems.
+
+*Fix:* Changed =:documeentation= to =:documentation=
+
+*Resolution:* Fixed in commit 2ea3f1f
