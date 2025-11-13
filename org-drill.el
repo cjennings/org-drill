@@ -1831,17 +1831,19 @@ Consider reformulating the item to make it easier to remember.\n"
                                #'org-drill-presentation-minibuffer-timer-function
                                item-start-time full-prompt)
           org-drill-presentation-timer-calls 0)
-    (save-window-excursion
-      (let ((buf
-             (org-drill-response-get-buffer-create)))
-        (select-window
-         (display-buffer-below-selected buf nil))
-        ;; Store the current session in a variable, so that it can
-        ;; be picked up by the when we leave the buffer
-        (setq-local org-drill-current-session session)
-        (recursive-edit)
-        (org-drill-presentation-timer-cancel)
-        (oref session exit-kind)))))
+    (unwind-protect
+        (save-window-excursion
+          (let ((buf
+                 (org-drill-response-get-buffer-create)))
+            (select-window
+             (display-buffer-below-selected buf nil))
+            ;; Store the current session in a variable, so that it can
+            ;; be picked up by the when we leave the buffer
+            (setq-local org-drill-current-session session)
+            (recursive-edit)
+            (oref session exit-kind)))
+      ;; Always cancel timer, even if recursive-edit exits abnormally
+      (org-drill-presentation-timer-cancel))))
 
 (cl-defun org-drill-presentation-prompt-for-string (session prompt)
   "Create a card prompt with a timer and user-specified menu.
@@ -3094,9 +3096,10 @@ work correctly with older versions of org mode. Your org mode version (%s) appea
           ;; Cleanup: restore display and run after-session hook
           (org-drill--restore-display)
           (run-hooks 'org-drill-after-session-hook)
+          ;; Always free done-entries markers, even on error or suspension
+          (org-drill-free-markers session (oref session done-entries))
           (unless (oref session end-pos)
-            (setf (oref session cram-mode) nil)
-            (org-drill-free-markers session (oref session done-entries))))))
+            (setf (oref session cram-mode) nil)))))
     (cond
      ((oref session end-pos)
       (when (markerp (oref session end-pos))
