@@ -2,21 +2,6 @@
 ** SEVERITY A - CRITICAL BUGS
 
 
-*** TODO [#A] Replace unsafe use of read() with safer alternatives (Lines 1006, 1306, 1359, 2741)
-:PROPERTIES:
-:LOCATION: org-drill.el:1006,1306,1359,2741
-:SEVERITY: A
-:TYPE: Security
-:END:
-
-Using =read= function on property values without sanitization. Major security vulnerability - arbitrary code execution possible.
-
-*Impact:* If attacker controls org-mode properties (shared files, malicious imports), they could execute arbitrary code.
-
-*Fix:*
-- Lines 1306/1359: Use =(string-to-number weight)= instead of =(read weight)=
-- Line 2741: Use =string-to-number= instead of =read=
-- Line 1006: Validate before reading
 
 *** TODO [#A] Fix missing return value in org-drill-get-tags-advice (Line 663)
 :PROPERTIES:
@@ -598,3 +583,26 @@ Misspelled =:documementation= instead of =:documentation= in the =cram-mode= slo
 *Fix:* Changed =:documeentation= to =:documentation=
 
 *Resolution:* Fixed in commit 2ea3f1f
+
+*** DONE [#A] Replace unsafe use of read() with safer alternatives
+CLOSED: [2025-11-13 Wed]
+:PROPERTIES:
+:LOCATION: org-drill.el:1068,1353,1406,2838
+:SEVERITY: A
+:TYPE: Security
+:END:
+
+Using =read= function on property values without sanitization. Major security vulnerability - arbitrary code execution possible.
+
+*Impact:* If attacker controls org-mode properties (shared files, malicious imports), they could execute arbitrary code.
+
+*Fix Applied:*
+- Lines 1353, 1406: Changed =(read weight)= to =(string-to-number weight)= for DRILL_CARD_WEIGHT
+- Line 2838: Changed =read= to =string-to-number= for DRILL_LAST_INTERVAL  
+- Line 1068: Created =org-drill--safe-read-learn-data= helper function that:
+  - Uses =read-from-string= instead of =read=
+  - Validates input is a list with at least 3 numeric elements
+  - Returns nil on invalid/malicious input with error handling
+  - Falls back to safe defaults if LEARN_DATA is corrupted
+
+*Resolution:* Fixed in commit 9d9c0be
