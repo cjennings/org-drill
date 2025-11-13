@@ -178,5 +178,91 @@ Single asterisk should still work as heading."
    (lambda ()
      (should (org-drill-entry-p)))))
 
+;;; Aggressive Boundary Cases
+
+(ert-deftest test-org-drill-entry-p-boundary-very-long-tag-name ()
+  "Test drill tag with very long name (edge case).
+Tag name length should not cause issues."
+  (let* ((long-tag (make-string 200 ?d))
+         (content (format "* Heading :%s:\n\nContent\n" long-tag)))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       ;; Should not match 'drill' tag
+       (should-not (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-many-tags ()
+  "Test heading with many tags including drill.
+Should still correctly identify drill tag among many others."
+  (let ((content "* Heading :tag1:tag2:tag3:drill:tag4:tag5:tag6:tag7:tag8:tag9:tag10:\n\nContent\n"))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-unicode-in-heading ()
+  "Test heading with unicode characters and drill tag.
+Unicode should not interfere with tag detection."
+  (let ((content "* Café München 北京 :drill:\n\nUnicode content 日本語\n"))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-deep-nesting ()
+  "Test drill tag detection at deep nesting level.
+Should work at any heading level."
+  (let ((content "* Level 1\n** Level 2\n*** Level 3\n**** Level 4\n***** Level 5 :drill:\n\nDeep content\n"))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       ;; Navigate to deeply nested heading
+       (re-search-forward "Level 5")
+       (beginning-of-line)
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-tag-with-numbers ()
+  "Test that tags containing 'drill' substring but with numbers don't match.
+drill123 should not be recognized as drill tag."
+  (let ((content "* Heading :drill123:\n\nContent\n"))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       (should-not (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-drill-at-tag-boundary ()
+  "Test drill tag at beginning and end of tag list."
+  (let ((content1 "* Heading :drill:other:tags:\n\nContent\n")
+        (content2 "* Heading :other:tags:drill:\n\nContent\n"))
+    ;; drill at start
+    (test-org-drill-entry-p--with-org-buffer
+     content1
+     (lambda ()
+       (should (org-drill-entry-p))))
+    ;; drill at end
+    (test-org-drill-entry-p--with-org-buffer
+     content2
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-special-chars-in-heading ()
+  "Test heading with special characters and drill tag.
+Special chars should not break tag parsing."
+  (let ((content "* Heading with @#$%^&*() special chars :drill:\n\nContent\n"))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-org-drill-entry-p-boundary-very-long-heading-line ()
+  "Test heading with very long title text.
+Long heading should not affect tag detection."
+  (let* ((long-title (make-string 1000 ?x))
+         (content (format "* %s :drill:\n\nContent\n" long-title)))
+    (test-org-drill-entry-p--with-org-buffer
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
 (provide 'test-org-drill-entry-p)
 ;;; test-org-drill-entry-p.el ends here
