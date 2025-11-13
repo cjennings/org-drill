@@ -922,7 +922,7 @@ drill entry."
            (time-to-days item-time))))))))
 
 (defun org-drill-entry-overdue-p (session &optional days-overdue last-interval)
-  "Returns true if entry that is scheduled DAYS-OVERDUE dasy in the past,
+  "Return non-nil if entry that is scheduled DAYS-OVERDUE days in the past,
 and whose last inter-repetition interval was LAST-INTERVAL, should be
 considered \\='overdue\\='. If the arguments are not given they are extracted
 from the entry at point."
