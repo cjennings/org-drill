@@ -1,0 +1,636 @@
+#+TITLE: org-drill Test Strategy
+#+AUTHOR: Test Implementation Plan
+#+DATE: 2025-11-13
+
+* Overview
+
+This document outlines the testing strategy for org-drill, an Emacs package implementing flashcard and spaced repetition functionality. The strategy follows best practices from quality-engineer.org, emphasizing:
+
+- Test isolation and independence
+- Clear naming conventions
+- Comprehensive coverage (normal, boundary, error cases)
+- Balance between unit and integration tests
+- Maintainable, readable test code
+
+* Current Status
+
+** Test Infrastructure
+- [X] Makefile with test targets configured
+- [X] Cask dependency management working
+- [X] Tests directory structure established (tests/)
+- [X] Existing test file moved to tests/ directory
+- [X] All compilation warnings fixed (0 warnings)
+
+** Existing Tests
+- tests/org-drill-test.el (3 tests, all passing)
+  - test-org-drill-entry-p functionality
+  - test-org-drill-map-entries with tags
+
+** Test Coverage Status
+- Unit tests: ~3 tests covering basic entry detection
+- Integration tests: 0 tests
+- Coverage: Minimal (~1% of codebase)
+
+** Next Steps
+1. [ ] Create test files for critical path functions (see Implementation Plan)
+2. [ ] Write integration tests for drill session workflow
+3. [ ] Add comprehensive card type tests
+4. [ ] Implement spaced repetition algorithm tests
+5. [ ] Add boundary and error case coverage
+
+* Architecture Overview
+
+** Core Components
+
+org-drill has several interconnected systems:
+
+*** Entry Management
+- Entry identification (drill tags, inheritance)
+- Entry filtering (due dates, overdue, new vs mature)
+- Entry state tracking (last reviewed, repetitions, etc.)
+
+*** Scheduling Algorithms
+- SM2 (SuperMemo 2)
+- SM5 (SuperMemo 5)
+- Simple8 (modified SM8)
+- Interval calculation based on quality ratings
+
+*** Session Management
+- Session state (entries pending, done, failed)
+- Progress tracking (counts, percentages)
+- Scope management (file, tree, directory, agenda)
+- Cram mode vs normal mode
+
+*** Card Type System
+- Simple cards (question/answer)
+- Two-sided and multi-sided cards
+- Cloze deletion variants (hide1, show1, hide/show with weights)
+- Language learning cards (conjugation, declension)
+- Spanish verb conjugation
+
+*** User Interface
+- Card presentation (hiding/showing text)
+- Response collection (quality ratings 0-5)
+- Answer display
+- Progress reporting
+
+* Test Categories
+
+** Unit Tests
+Test individual functions in isolation with no external dependencies.
+
+*** Naming Convention
+Pattern: =test-org-drill-<function>-<category>-<scenario>-<expected>.el=
+
+Examples:
+- =test-org-drill-entry-p-normal-valid-tag-returns-true.el=
+- =test-org-drill-entry-p-boundary-inherited-tag-returns-true.el=
+- =test-org-drill-entry-overdue-p-error-nil-interval-returns-nil.el=
+
+*** Test Structure
+Each test file should contain:
+- Setup/teardown using testutil functions
+- Normal cases (expected usage)
+- Boundary cases (edge values, empty/nil, single elements)
+- Error cases (invalid inputs, missing data)
+
+** Integration Tests
+Test multiple components working together in realistic workflows.
+
+*** Naming Convention
+Pattern: =test-integration-<area>-<scenario>-<outcome>.el=
+
+Examples:
+- =test-integration-drill-session-complete-workflow-reschedules-entries.el=
+- =test-integration-spaced-repetition-quality-ratings-affect-intervals.el=
+- =test-integration-card-types-cloze-hides-and-reveals-text.el=
+
+*** Integration Test Characteristics
+- Test workflows spanning multiple functions
+- Use real org-mode buffers and data structures
+- May involve file I/O, property manipulation, state changes
+- More setup required, slower than unit tests
+- Higher value for catching real-world bugs
+
+* Critical Functions by Priority
+
+Functions prioritized by criticality to org-drill operation:
+
+** Priority 1: Core Drill Loop (Cannot function without these)
+
+*** org-drill-entry-p
+*Criticality:* CRITICAL - Entry point for identifying drill items
+- Tests if a heading is a drill entry
+- Used by all drill operations
+- *Test file:* =test-org-drill-entry-p.el=
+
+*** org-drill-entries
+*Criticality:* CRITICAL - Main drill session loop
+- Orchestrates the entire drill session
+- Manages entry queue and state transitions
+- *Test file:* =test-org-drill-entries.el=
+- *Integration test:* =test-integration-drill-session-complete-workflow.el=
+
+*** org-drill-entry
+*Criticality:* CRITICAL - Presents individual drill items
+- Shows question, collects response, handles answer
+- Core user interaction point
+- *Test file:* =test-org-drill-entry.el=
+
+** Priority 2: Scheduling & Intervals (Core algorithm correctness)
+
+*** org-drill-determine-next-interval-sm2
+*Criticality:* HIGH - Primary scheduling algorithm
+- Calculates next review interval based on SM2
+- Quality ratings → interval calculations
+- *Test file:* =test-org-drill-determine-next-interval-sm2.el=
+- Must cover all quality values (0-5), boundary intervals
+
+*** org-drill-determine-next-interval-sm5
+*Criticality:* HIGH - Advanced scheduling option
+- More sophisticated than SM2
+- Uses optimal factor matrix
+- *Test file:* =test-org-drill-determine-next-interval-sm5.el=
+
+*** org-drill-reschedule
+*Criticality:* HIGH - Applies scheduling decisions
+- Updates entry properties with new intervals
+- Persists scheduling state
+- *Test file:* =test-org-drill-reschedule.el=
+
+*** org-drill-entry-days-overdue
+*Criticality:* HIGH - Determines entry priority
+- Calculates overdueness for scheduling
+- Affects entry selection order
+- *Test file:* =test-org-drill-entry-days-overdue.el=
+
+** Priority 3: Entry Selection & Filtering (Correct entry set)
+
+*** org-drill-entry-overdue-p
+*Criticality:* MEDIUM - Filters entries for review
+- Determines if entry is due for review
+- *Test file:* =test-org-drill-entry-overdue-p.el=
+
+*** org-drill-entry-due-p
+*Criticality:* MEDIUM - Core filtering logic
+- Checks if entry meets review criteria
+- Different behavior for cram vs normal mode
+- *Test file:* =test-org-drill-entry-due-p.el=
+
+*** org-drill-entry-leech-p
+*Criticality:* MEDIUM - Special case handling
+- Identifies problematic items
+- Affects leech handling behavior
+- *Test file:* =test-org-drill-entry-leech-p.el=
+
+*** org-drill-map-entries
+*Criticality:* MEDIUM - Entry collection
+- Finds and filters drill entries in scope
+- Handles file/tree/agenda scopes
+- *Test file:* =test-org-drill-map-entries.el=
+- *Integration test:* =test-integration-entry-collection-scope-filters.el=
+
+** Priority 4: Card Presentation (User experience)
+
+*** Card Type Tests
+Card type functions are HYBRID tests (both unit and integration aspects):
+- *Unit aspect:* Individual presentation logic (hiding text, formatting)
+- *Integration aspect:* Interaction with answer handling and user response
+
+*Naming convention for card types:*
+Pattern: =test-card-type-<card-type>-<category>-<scenario>.el=
+
+Examples:
+- =test-card-type-simple-normal-shows-question-hides-answer.el=
+- =test-card-type-twosided-normal-alternates-sides.el=
+- =test-card-type-hide1cloze-boundary-single-cloze-hides-correctly.el=
+- =test-card-type-multicloze-error-no-cloze-markup-fails-gracefully.el=
+
+*Card types to test:*
+1. =org-drill-present-simple-card= - Basic Q&A (PRIORITY: HIGH)
+2. =org-drill-present-two-sided-card= - Bidirectional cards (PRIORITY: MEDIUM)
+3. =org-drill-present-multi-sided-card= - Multiple sides (PRIORITY: MEDIUM)
+4. =org-drill-present-multicloze-hide1= - Hide one cloze (PRIORITY: HIGH)
+5. =org-drill-present-multicloze-show1= - Show one cloze (PRIORITY: MEDIUM)
+6. =org-drill-present-multicloze-hide1-firstmore= - Weighted hiding (PRIORITY: LOW)
+7. =org-drill-present-verb-conjugation= - Language learning (PRIORITY: LOW)
+8. =org-drill-present-noun-declension= - Language learning (PRIORITY: LOW)
+
+** Priority 5: Session State & Reporting (Polish)
+
+*** org-drill-session class methods
+*Criticality:* MEDIUM - Session state management
+- Track progress, counts, statistics
+- *Integration test:* =test-integration-session-state-tracking.el=
+
+*** org-drill-report
+*Criticality:* LOW - User feedback
+- Display session results
+- Less critical to core functionality
+
+* Integration Test Scenarios
+
+** High Priority Integration Tests
+
+*** Complete Drill Session Workflow
+*File:* =test-integration-drill-session-complete-workflow.el=
+
+*Scenario:* User runs org-drill, reviews items, session completes successfully
+
+*Components integrated:*
+- org-drill (entry point)
+- org-drill-entries (session loop)
+- org-drill-entry (individual drill)
+- Card presentation functions
+- org-drill-reschedule (update intervals)
+- Property persistence (DRILL_LAST_REVIEWED, etc.)
+
+*Validates:*
+- Entries are selected correctly based on due dates
+- Cards present appropriately for their type
+- User responses trigger correct rescheduling
+- Entry properties are updated and persisted
+- Session statistics are accurate
+
+*** Spaced Repetition Algorithm Integration
+*File:* =test-integration-spaced-repetition-quality-affects-intervals.el=
+
+*Scenario:* Different quality ratings produce expected interval changes
+
+*Components integrated:*
+- org-drill-entry (collects quality rating)
+- org-drill-determine-next-interval-* (calculates interval)
+- org-drill-reschedule (applies new interval)
+- Property reading/writing
+
+*Validates:*
+- Quality 5 → longer intervals (easy items)
+- Quality 0-2 → reset or short intervals (failed items)
+- Intervals increase appropriately with successful repetitions
+- Algorithm choice (SM2/SM5/Simple8) affects results correctly
+- Lapsed items handled appropriately
+
+*** Leech Detection and Handling
+*File:* =test-integration-leech-detection-and-handling.el=
+
+*Scenario:* Items that fail repeatedly are tagged and handled as leeches
+
+*Components integrated:*
+- org-drill-entry (tracks failures)
+- Failure count increment
+- Leech tagging (add "leech" tag)
+- org-drill-entry-leech-p (detection)
+- Leech method handling (skip/warn/nil)
+
+*Validates:*
+- Failure threshold triggers leech tagging
+- Leech items are skipped when leech-method is 'skip
+- Warning displayed when leech-method is 'warn
+- Leech tag persists across sessions
+
+** Medium Priority Integration Tests
+
+*** Card Type Presentation Chain
+*File:* =test-integration-card-types-presentation-and-answer.el=
+
+*Scenario:* Different card types present correctly and collect answers
+
+*Components integrated:*
+- org-drill-entry-f (card orchestration)
+- Card type presentation functions
+- org-drill-present-default-answer (answer display)
+- Overlay management (hiding/showing text)
+
+*Validates:*
+- Each card type hides appropriate content
+- Answer reveal shows correct information
+- User can navigate through answer display
+- Overlays are cleaned up properly
+
+*** Multi-File and Scope Handling
+*File:* =test-integration-scope-handling-files-trees-agenda.el=
+
+*Scenario:* Drill sessions work across different scopes
+
+*Components integrated:*
+- org-drill (scope parameter handling)
+- org-drill-map-entries (scope-aware filtering)
+- org-agenda integration (agenda scope)
+- File finding and buffer management
+
+*Validates:*
+- File scope drills only current file
+- Tree scope drills only current subtree
+- Directory scope finds all .org files
+- Agenda scope uses org-agenda-files
+
+*** Cram Mode vs Normal Mode
+*File:* =test-integration-cram-mode-behavior.el=
+
+*Scenario:* Cram mode treats entries differently than normal mode
+
+*Components integrated:*
+- org-drill-cram (cram mode entry)
+- Entry filtering (all items vs due items)
+- Scheduling (cram doesn't update long-term schedule)
+- org-drill-cram-hours (recent review filtering)
+
+*Validates:*
+- Cram mode includes all entries regardless of due date
+- Recent items (within cram-hours) are excluded
+- Cram mode doesn't update normal scheduling data
+- Normal mode only includes due entries
+
+** Lower Priority Integration Tests
+
+*** Session Interruption and Resume
+*File:* =test-integration-session-resume-after-interruption.el=
+
+*Scenario:* User can pause and resume drill sessions
+
+*Validates:*
+- Session state is preserved
+- Failed items are remembered
+- Resume continues from correct point
+
+*** Session Time and Count Limits
+*File:* =test-integration-session-limits-time-and-count.el=
+
+*Scenario:* Sessions respect maximum duration and item counts
+
+*Validates:*
+- Session stops at maximum items
+- Session stops at maximum duration
+- Limits are configurable
+
+* Implementation Plan
+
+** Phase 1: Foundation (Week 1)
+Goal: Test critical path functions to ensure basic operation
+
+*** Step 1.1: Entry Detection Tests
+- [ ] Create =test-org-drill-entry-p.el=
+  - Normal: Valid drill tag
+  - Boundary: Inherited tag, nested entries
+  - Error: No heading, no tags
+
+- [ ] Create =test-org-drill-part-of-drill-entry-p.el=
+  - Normal: Main heading and subheading
+  - Boundary: Deeply nested
+  - Error: Outside drill entry
+
+*** Step 1.2: Basic Scheduling Tests
+- [ ] Create =test-org-drill-determine-next-interval-sm2.el=
+  - Normal: Quality 3-5 (successful recall)
+  - Boundary: First repetition, very high repetition count
+  - Error: Quality 0-2 (failed items), invalid quality
+
+- [ ] Create =test-org-drill-reschedule.el=
+  - Normal: Update with new interval
+  - Boundary: Nil intervals, zero intervals
+  - Error: Invalid entry, missing properties
+
+*** Step 1.3: First Integration Test
+- [ ] Create =test-integration-drill-session-simple-workflow.el=
+  - Single entry, simple card type
+  - User rates quality 4
+  - Verify interval updated correctly
+
+** Phase 2: Card Types (Week 2)
+Goal: Ensure all card types work correctly
+
+*** Step 2.1: Simple Card Types
+- [ ] Create =test-card-type-simple-normal-presentation.el=
+- [ ] Create =test-card-type-twosided-normal-alternates.el=
+
+*** Step 2.2: Cloze Card Types
+- [ ] Create =test-card-type-hide1cloze-normal-single-hidden.el=
+- [ ] Create =test-card-type-show1cloze-normal-single-shown.el=
+- [ ] Create =test-card-type-multicloze-boundary-multiple-clozes.el=
+
+*** Step 2.3: Card Type Integration
+- [ ] Create =test-integration-card-types-all-types-work.el=
+  - Test each card type in actual drill session
+  - Verify presentation and answer handling
+
+** Phase 3: Advanced Scheduling (Week 3)
+Goal: Test all scheduling algorithms thoroughly
+
+*** Step 3.1: SM5 Algorithm
+- [ ] Create =test-org-drill-determine-next-interval-sm5.el=
+- [ ] Test optimal factor matrix behavior
+
+*** Step 3.2: Simple8 Algorithm
+- [ ] Create =test-org-drill-determine-next-interval-simple8.el=
+- [ ] Test early/late review adjustments
+
+*** Step 3.3: Overdue and Due Logic
+- [ ] Create =test-org-drill-entry-days-overdue.el=
+- [ ] Create =test-org-drill-entry-overdue-p.el=
+- [ ] Create =test-org-drill-entry-due-p.el=
+
+*** Step 3.4: Algorithm Integration
+- [ ] Create =test-integration-spaced-repetition-algorithms.el=
+  - Compare SM2, SM5, Simple8 behaviors
+  - Verify algorithm selection works
+
+** Phase 4: Session Management (Week 4)
+Goal: Test session orchestration and state
+
+*** Step 4.1: Session State Tests
+- [ ] Create =test-org-drill-session-class.el=
+  - Test session initialization
+  - Test state tracking (done, failed, pending)
+
+*** Step 4.2: Entry Collection
+- [ ] Create =test-org-drill-map-entries.el=
+  - Test file scope
+  - Test tree scope
+  - Test tag filtering
+
+*** Step 4.3: Session Integration
+- [ ] Create =test-integration-drill-session-complete-workflow.el=
+- [ ] Create =test-integration-session-state-tracking.el=
+
+** Phase 5: Special Cases (Week 5)
+Goal: Test edge cases and special behaviors
+
+*** Step 5.1: Leech Handling
+- [ ] Create =test-org-drill-entry-leech-p.el=
+- [ ] Create =test-integration-leech-detection-and-handling.el=
+
+*** Step 5.2: Cram Mode
+- [ ] Create =test-org-drill-cram.el=
+- [ ] Create =test-integration-cram-mode-behavior.el=
+
+*** Step 5.3: Session Limits
+- [ ] Create =test-integration-session-limits-time-and-count.el=
+
+** Phase 6: Polish (Week 6)
+Goal: Add remaining coverage and documentation
+
+*** Step 6.1: Boundary Cases
+- [ ] Review all test files for boundary case coverage
+- [ ] Add missing boundary tests
+
+*** Step 6.2: Error Cases
+- [ ] Review all test files for error case coverage
+- [ ] Add missing error tests
+
+*** Step 6.3: Documentation
+- [ ] Update this document with final coverage statistics
+- [ ] Document any untested areas and rationale
+- [ ] Add test maintenance guide
+
+* Test Naming Quick Reference
+
+** Unit Test Naming
+Pattern: =test-org-drill-<function>-<category>-<scenario>-<expected>.el=
+
+Categories:
+- =normal= - Expected usage patterns
+- =boundary= - Edge values, empty/nil, limits
+- =error= - Invalid inputs, failures
+
+Example structure within file:
+#+begin_src elisp
+;;; Normal Cases
+(ert-deftest test-org-drill-entry-p-normal-valid-tag-returns-true () ...)
+(ert-deftest test-org-drill-entry-p-normal-no-tag-returns-nil () ...)
+
+;;; Boundary Cases
+(ert-deftest test-org-drill-entry-p-boundary-inherited-tag-returns-true () ...)
+(ert-deftest test-org-drill-entry-p-boundary-deeply-nested-returns-true () ...)
+
+;;; Error Cases
+(ert-deftest test-org-drill-entry-p-error-not-at-heading-returns-nil () ...)
+#+end_src
+
+** Integration Test Naming
+Pattern: =test-integration-<area>-<scenario>-<outcome>.el=
+
+Areas:
+- =drill-session= - Complete drill workflows
+- =spaced-repetition= - Algorithm behavior
+- =card-types= - Card presentation
+- =leech= - Leech detection and handling
+- =cram= - Cram mode behavior
+- =scope= - File/tree/agenda scope
+- =session-state= - State tracking
+
+Example structure within file:
+#+begin_src elisp
+;;; Setup
+(defun test-integration-setup-drill-buffer () ...)
+
+;;; Normal Workflow Tests
+(ert-deftest test-integration-drill-session-single-entry-completes () ...)
+(ert-deftest test-integration-drill-session-multiple-entries-tracked () ...)
+
+;;; Edge Case Tests
+(ert-deftest test-integration-drill-session-all-failed-tracks-correctly () ...)
+#+end_src
+
+** Card Type Test Naming
+Pattern: =test-card-type-<card-type>-<category>-<scenario>.el=
+
+Card types:
+- =simple= - Basic Q&A
+- =twosided= - Bidirectional
+- =multisided= - Multiple faces
+- =hide1cloze= - Hide one cloze
+- =show1cloze= - Show one cloze
+- =multicloze= - Multiple cloze handling
+- =conjugate= - Verb conjugation
+- =declension= - Noun declension
+
+* Coverage Goals
+
+** Target Coverage by Component
+
+*** Entry Management: 90%
+- Entry detection functions are critical
+- Must handle all tag inheritance cases
+- Edge cases around heading detection
+
+*** Scheduling Algorithms: 95%
+- Mathematical correctness is essential
+- All quality ratings must be tested
+- Boundary intervals (0, 1, max) critical
+
+*** Card Types: 80%
+- Basic types (simple, cloze) need high coverage
+- Specialized types (conjugation) less critical
+- Focus on correct text hiding/showing
+
+*** Session Management: 85%
+- Core loop must be robust
+- State tracking is important
+- Scope handling needs coverage
+
+*** UI/Presentation: 60%
+- Interactive functions harder to test
+- Focus on testable helper functions
+- Integration tests for user workflows
+
+** Overall Target: 80% Coverage
+- Focus on critical path first
+- Add coverage incrementally
+- Balance effort vs value
+
+* Maintenance Guidelines
+
+** Updating This Document
+- Update "Current Status" section as tests are implemented
+- Check off items in Implementation Plan as completed
+- Document any deviations from the plan with rationale
+- Add new test ideas to the appropriate section
+
+** Test Maintenance
+- Run full test suite before committing: =make test=
+- Update tests when functionality changes
+- Remove obsolete tests
+- Refactor tests alongside production code
+
+** Adding New Tests
+1. Determine if unit or integration test
+2. Follow naming convention for category
+3. Place in appropriate file (create if needed)
+4. Use existing test utilities where possible
+5. Add to this document's tracking sections
+
+* References
+
+- quality-engineer.org: Comprehensive testing guidelines
+- Makefile: Test runner configuration
+- tests/org-drill-test.el: Existing test examples
+- testutil-*.el files: Test utility functions (if created)
+
+* Notes
+
+** Test Philosophy for org-drill
+- Spaced repetition correctness is paramount (test algorithms thoroughly)
+- User data integrity matters (test property updates carefully)
+- Card presentation affects learning (test hiding/showing accurately)
+- Session state must be reliable (test state transitions)
+
+** Card Types: Unit or Integration?
+Card type tests are HYBRID:
+- *Unit aspects:* Text hiding, formatting, overlay management
+- *Integration aspects:* Answer handling, user response, state transitions
+
+*Recommendation:* Write as unit tests first (fast, focused), then add integration tests for workflows that span card presentation + answer + rescheduling.
+
+** Testing Interactive Functions
+Many org-drill functions are interactive (=defun ... (interactive)=):
+- Extract testable logic into internal functions (=org-drill--internal=)
+- Test internal functions with explicit parameters
+- Keep interactive wrappers thin (just user input handling)
+- Integration tests can exercise full interactive workflows
+
+** Testing with Real Org Buffers
+Some tests need real org-mode buffers:
+- Use =with-temp-buffer= and =(org-mode)= for temporary buffers
+- Create test data as org-mode text, not mocked functions
+- Test with realistic org structure (headings, properties, tags)
+- Clean up buffers in teardown
