@@ -1545,9 +1545,6 @@ of QUALITY."
           (cond
            ((<= quality org-drill-failure-quality)
             (when org-drill-leech-failure-threshold
-              ;;(setq failures (if failures (string-to-number failures) 0))
-              ;; (org-set-property "DRILL_FAILURE_COUNT"
-              ;;                   (format "%d" (1+ failures)))
               (if (> (1+ failures) org-drill-leech-failure-threshold)
                   (org-toggle-tag "leech" 'on))))
            (t
