@@ -3391,11 +3391,11 @@ copy them across."
                        (org-drill-store-item-data last-interval repetitions failures
                                                   total-repeats meanq ease)
                        (if last-quality
-                           (org-set-property "LAST_QUALITY" last-quality)
-                         (org-delete-property "LAST_QUALITY"))
+                           (org-set-property "DRILL_LAST_QUALITY" last-quality)
+                         (org-delete-property "DRILL_LAST_QUALITY"))
                        (if last-reviewed
-                           (org-set-property "LAST_REVIEWED" last-reviewed)
-                         (org-delete-property "LAST_REVIEWED"))
+                           (org-set-property "DRILL_LAST_REVIEWED" last-reviewed)
+                         (org-delete-property "DRILL_LAST_REVIEWED"))
                        (if scheduled-time
                            (org-schedule nil scheduled-time))))))
                (remhash id org-drill-dest-id-table)
