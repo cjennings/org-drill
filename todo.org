@@ -7,17 +7,6 @@
 ** SEVERITY B - HIGH PRIORITY BUGS
 
 
-*** TODO [#A] Fix infinite loop in marker selection (Lines 2498-2500)
-:PROPERTIES:
-:LOCATION: org-drill.el:2498-2500
-:SEVERITY: B
-:END:
-
-Variable =m= may remain nil or invalid, creating infinite loop when all entries are invalid.
-
-*Impact:* Infinite loop if all pending entries become invalid (deleted or no longer have drill tag).
-
-*Fix:* Add safety counter or ensure loop can exit when no valid entries remain.
 
 *** TODO [#B] Fix race condition with timer cleanup (Lines 1662-1665, 1768)
 :PROPERTIES:
@@ -614,3 +603,22 @@ Division by =last-interval= without checking if it's zero in =org-drill-entry-ov
 - Prevents division by zero for new items or items after failures
 
 *Resolution:* Fixed in commit becb992
+
+*** DONE [#A] Fix infinite loop in marker selection
+CLOSED: [2025-11-13 Wed]
+:PROPERTIES:
+:LOCATION: org-drill.el:2619-2671
+:SEVERITY: B
+:END:
+
+Variable =m= may remain nil or invalid, creating infinite loop when all entries are invalid.
+
+*Impact:* Infinite loop if all pending entries become invalid (deleted or no longer have drill tag).
+
+*Fix Applied:*
+- Added safety counter with max-attempts limit of 1000
+- Loop now exits if max attempts reached
+- Returns nil if no valid entry found after exhausting attempts
+- Increments attempts counter on each iteration
+
+*Resolution:* Fixed in commit fe73c80
