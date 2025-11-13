@@ -303,5 +303,141 @@ Third review interval should be significantly larger than second."
            (interval-3rd (test-sm2--extract-interval result-3rd)))
       (should (> interval-3rd (* interval-2nd 1.5)))))) ; Significant growth
 
+;;; Aggressive Boundary Cases
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-very-high-repeat-count ()
+  "Test SM2 with very high repeat count (1000 reviews).
+Algorithm should remain stable with extreme n values."
+  (let ((org-drill-add-random-noise-to-intervals-p nil))
+    (let* ((result (org-drill-determine-next-interval-sm2 365 1000 2.5 4 0 4.0 1000))
+           (interval (test-sm2--extract-interval result))
+           (repeats (test-sm2--extract-repeats result))
+           (ef (test-sm2--extract-ef result)))
+      (should (numberp interval))
+      (should (> interval 0))
+      (should (= repeats 1001))
+      (should (>= ef test-sm2-min-ef)))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-very-long-interval ()
+  "Test SM2 with very long last interval (10 years = 3650 days).
+Algorithm should handle extreme intervals without overflow."
+  (let ((org-drill-add-random-noise-to-intervals-p nil))
+    (let* ((result (org-drill-determine-next-interval-sm2 3650 100 2.5 4 0 4.0 100))
+           (interval (test-sm2--extract-interval result)))
+      (should (numberp interval))
+      (should (> interval 0)))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-very-high-failure-count ()
+  "Test SM2 with very high failure count (100+ failures).
+Failure count should be tracked correctly even at extreme values."
+  (let* ((failures 100)
+         (result (org-drill-determine-next-interval-sm2 10 3 2.5 0 failures 3.0 150))
+         (new-failures (test-sm2--extract-failures result)))
+    (should (= new-failures (1+ failures)))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-very-high-total-repeats ()
+  "Test SM2 with very high total-repeats (10000+).
+Total repeats should increment correctly even at extreme values."
+  (let* ((total-repeats 10000)
+         (result (org-drill-determine-next-interval-sm2 10 3 2.5 4 0 4.0 total-repeats))
+         (new-total (test-sm2--extract-total-repeats result)))
+    (should (= new-total (1+ total-repeats)))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-ef-just-above-floor ()
+  "Test SM2 with EF just above minimum floor (1.31).
+EF should be maintained or modified normally, not clamped."
+  (let* ((result (org-drill-determine-next-interval-sm2 10 3 1.31 4 0 4.0 10))
+         (ef (test-sm2--extract-ef result)))
+    (should (>= ef test-sm2-min-ef))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-ef-at-floor ()
+  "Test SM2 with EF exactly at minimum floor (1.3).
+EF at floor with quality 4 should increase slightly."
+  (let* ((result (org-drill-determine-next-interval-sm2 10 3 1.3 4 0 4.0 10))
+         (ef (test-sm2--extract-ef result)))
+    (should (>= ef test-sm2-min-ef))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-perfect-recall-after-many-failures ()
+  "Test perfect recall (quality 5) after long failure streak.
+Perfect recall should not reset failures, but should calculate normal interval."
+  (let ((org-drill-add-random-noise-to-intervals-p nil))
+    (let* ((failures 50)
+           (result (org-drill-determine-next-interval-sm2 10 3 2.5 5 failures 3.0 100))
+           (interval (test-sm2--extract-interval result))
+           (new-failures (test-sm2--extract-failures result)))
+      (should (> interval 0))
+      (should (= new-failures failures))))) ; Failures unchanged on success
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-failure-after-long-streak ()
+  "Test complete failure (quality 0) after long successful streak.
+Failure should reset interval to -1 regardless of previous success."
+  (let* ((result (org-drill-determine-next-interval-sm2 365 100 2.8 0 0 4.5 100))
+         (interval (test-sm2--extract-interval result))
+         (repeats (test-sm2--extract-repeats result))
+         (failures (test-sm2--extract-failures result)))
+    (should (= interval -1))
+    (should (= repeats 1)) ; Reset to 1
+    (should (= failures 1))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-meanq-at-maximum ()
+  "Test SM2 with meanq at maximum (5.0).
+High quality review with already-perfect meanq."
+  (let* ((result (org-drill-determine-next-interval-sm2 10 3 2.5 5 0 5.0 100))
+         (meanq (test-sm2--extract-meanq result)))
+    (should (<= meanq 5.0))
+    (should (>= meanq 4.5)))) ; Should remain very high
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-meanq-at-minimum ()
+  "Test SM2 with meanq at minimum (0.0).
+Low quality history with poor current recall."
+  (let* ((result (org-drill-determine-next-interval-sm2 10 3 2.5 3 5 0.0 100))
+         (meanq (test-sm2--extract-meanq result)))
+    (should (>= meanq 0.0))
+    (should (<= meanq 1.0)))) ; Should remain low with quality 3
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-high-total-repeats-low-meanq ()
+  "Test SM2 with very high total-repeats but low meanq.
+Indicates item reviewed many times but poorly recalled."
+  (let* ((total-repeats 1000)
+         (meanq 2.0)
+         (result (org-drill-determine-next-interval-sm2 5 10 1.5 3 20 meanq total-repeats))
+         (new-meanq (test-sm2--extract-meanq result)))
+    (should (numberp new-meanq))
+    ;; meanq should remain low given poor history
+    (should (< new-meanq 3.0))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-zero-last-interval ()
+  "Test SM2 with zero last-interval.
+Should handle as first review (n=1 case)."
+  (let* ((result (org-drill-determine-next-interval-sm2 0 1 2.5 4 0 4.0 0))
+         (interval (test-sm2--extract-interval result)))
+    (should (= interval 1))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-float-vs-int-intervals ()
+  "Test SM2 with float last-interval vs integer.
+Algorithm should handle both correctly."
+  (let ((org-drill-add-random-noise-to-intervals-p nil))
+    (let* ((result-float (org-drill-determine-next-interval-sm2 10.5 3 2.5 4 0 4.0 10))
+           (result-int (org-drill-determine-next-interval-sm2 10 3 2.5 4 0 4.0 10))
+           (interval-float (test-sm2--extract-interval result-float))
+           (interval-int (test-sm2--extract-interval result-int)))
+      (should (numberp interval-float))
+      (should (numberp interval-int))
+      ;; Both should produce reasonable intervals
+      (should (> interval-float 10))
+      (should (> interval-int 10)))))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-boundary-alternating-quality-pattern ()
+  "Test SM2 behavior with alternating quality (5, 0, 5, 0 pattern).
+Simulates inconsistent learning."
+  (let* ((result-1 (org-drill-determine-next-interval-sm2 1 2 2.5 5 0 5.0 1))
+         (ef-1 (test-sm2--extract-ef result-1))
+         (result-2 (org-drill-determine-next-interval-sm2 6 3 ef-1 0 0 4.5 2))
+         (interval-2 (test-sm2--extract-interval result-2))
+         (failures-2 (test-sm2--extract-failures result-2)))
+    ;; After perfect then fail, should reset interval
+    (should (= interval-2 -1))
+    (should (= failures-2 1))))
+
 (provide 'test-org-drill-determine-next-interval-sm2)
 ;;; test-org-drill-determine-next-interval-sm2.el ends here

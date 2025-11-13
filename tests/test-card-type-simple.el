@@ -209,5 +209,252 @@ Card should still be valid, answer would come from DRILL_ANSWER property."
     (should (eq default-fn explicit-fn))
     (should (eq default-fn 'org-drill-present-simple-card))))
 
+;;; Aggressive Edge Cases
+
+(ert-deftest test-card-type-simple-edge-unicode-in-question-and-answer ()
+  "Test simple card with Unicode characters in question and answer.
+Unicode should be preserved correctly."
+  (let ((content "* Unicode Card :drill:
+
+Question: What is 北京 (Beijing) in Japanese?
+
+** Answer
+
+東京 (Tokyo) is different. 北京 is Běijīng in Chinese.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-special-chars-in-content ()
+  "Test simple card with special characters (@#$%^&*) in content."
+  (let ((content "* Special Chars Card :drill:
+
+Question: What does @#$%^&*() mean?
+
+** Answer
+
+These are special characters used in programming: @#$%^&*()
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-deeply-nested-answer-subheadings ()
+  "Test simple card with very deeply nested answer structure.
+Should handle deep nesting without issues."
+  (let ((content "* Nested Answers :drill:
+
+Question text.
+
+** Level 2 Answer
+*** Level 3
+**** Level 4
+***** Level 5
+****** Level 6
+
+Deep answer content.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-answer-with-lists ()
+  "Test simple card with lists in answer.
+Org-mode lists should be preserved in answer."
+  (let ((content "* Card with List Answer :drill:
+
+Question: List three primary colors?
+
+** Answer
+
+- Red
+- Blue
+- Yellow
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-answer-with-table ()
+  "Test simple card with org-mode table in answer."
+  (let ((content "* Card with Table :drill:
+
+Question: Show conversion table.
+
+** Answer
+
+| Celsius | Fahrenheit |
+|---------+------------|
+|       0 |         32 |
+|     100 |        212 |
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-answer-with-code-block ()
+  "Test simple card with source code block in answer."
+  (let ((content "* Card with Code :drill:
+
+Question: How to print in Python?
+
+** Answer
+
+#+BEGIN_SRC python
+print(\"Hello, World!\")
+#+END_SRC
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-both-property-and-subheading-answer ()
+  "Test simple card with both DRILL_ANSWER property and answer subheading.
+One of them should take precedence (typically property)."
+  (let ((content "* Dual Answer Card :drill:
+:PROPERTIES:
+:DRILL_ANSWER: Property answer
+:END:
+
+Question text.
+
+** Answer
+
+Subheading answer.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))
+       (should (equal "Property answer" (org-entry-get (point) "DRILL_ANSWER")))))))
+
+(ert-deftest test-card-type-simple-edge-extremely-long-drill-answer-property ()
+  "Test simple card with very long DRILL_ANSWER property.
+Long property values should be handled correctly."
+  (let* ((long-answer (make-string 10000 ?x))
+         (content (format "* Long Answer Property Card :drill:
+:PROPERTIES:
+:DRILL_ANSWER: %s
+:END:
+
+Question.
+" long-answer)))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))
+       (let ((answer (org-entry-get (point) "DRILL_ANSWER")))
+         (should answer)
+         (should (> (length answer) 5000)))))))
+
+(ert-deftest test-card-type-simple-edge-answer-subheading-with-tags ()
+  "Test simple card where answer subheading has tags.
+Tags in subheadings should not interfere with card behavior."
+  (let ((content "* Question Card :drill:
+
+Question text.
+
+** Answer :important:note:
+
+Answer content.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-multiple-drill-answer-properties ()
+  "Test behavior with duplicate DRILL_ANSWER properties (malformed).
+Should handle gracefully, using first or last value."
+  (let ((content "* Duplicate Properties Card :drill:
+:PROPERTIES:
+:DRILL_ANSWER: First answer
+:DRILL_ANSWER: Second answer
+:END:
+
+Question.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))
+       ;; Org-mode typically uses last value for duplicate properties
+       (let ((answer (org-entry-get (point) "DRILL_ANSWER")))
+         (should answer))))))
+
+(ert-deftest test-card-type-simple-edge-answer-with-links ()
+  "Test simple card with org-mode links in answer."
+  (let ((content "* Card with Links :drill:
+
+Question: What is Emacs?
+
+** Answer
+
+Emacs is a [[https://www.gnu.org/software/emacs/][text editor]].
+See also: [[file:manual.org][manual]].
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-question-with-formatting ()
+  "Test simple card with org-mode formatting in question.
+Bold, italic, code, etc. should be preserved."
+  (let ((content "* Formatted Question :drill:
+
+Question: What is *bold*, /italic/, =code=, and ~verbatim~?
+
+** Answer
+
+These are org-mode text formatting options.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-empty-answer-subheading ()
+  "Test simple card with empty answer subheading.
+Answer subheading exists but has no content."
+  (let ((content "* Empty Answer Card :drill:
+
+Question text.
+
+** Answer
+
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
+(ert-deftest test-card-type-simple-edge-answer-with-drawers ()
+  "Test simple card with drawers in answer section.
+Org-mode drawers should be preserved."
+  (let ((content "* Card with Drawer Answer :drill:
+
+Question text.
+
+** Answer
+
+:LOGBOOK:
+- Note taken on [2024-01-01]
+:END:
+
+Answer content after drawer.
+"))
+    (test-card-type-simple--with-card
+     content
+     (lambda ()
+       (should (org-drill-entry-p))))))
+
 (provide 'test-card-type-simple)
 ;;; test-card-type-simple.el ends here

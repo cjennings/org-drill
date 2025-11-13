@@ -344,5 +344,273 @@ Simulates reviewing a card and verifies all components work together."
              (should (= (nth 2 retrieved-data) new-failures))
              (should (= (nth 3 retrieved-data) new-total)))))))))
 
+;;; Error Cases - Data Corruption and Malformation
+
+(ert-deftest test-integration-simple-workflow-error-invalid-property-values ()
+  "Test behavior with invalid (non-numeric) property values.
+Should handle gracefully or provide sensible defaults."
+  (let ((content "* Corrupted Card :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: invalid_number
+:DRILL_REPEATS_SINCE_FAIL: abc
+:DRILL_TOTAL_REPEATS: xyz
+:DRILL_FAILURE_COUNT: 0
+:DRILL_AVERAGE_QUALITY: not_a_float
+:DRILL_EASE: 2.5
+:END:
+
+Question content.
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Corrupted Card :drill:")
+       (beginning-of-line)
+       ;; Should not error when retrieving data with invalid values
+       (let ((data (org-drill-get-item-data)))
+         (should (listp data))
+         ;; Verify function handles corruption gracefully
+         (should (= (length data) 6)))))))
+
+(ert-deftest test-integration-simple-workflow-error-missing-properties ()
+  "Test behavior with completely missing drill properties.
+Should provide sensible defaults for new/uninitialized cards."
+  (let ((content "* Card Without Properties :drill:
+
+Question: Test question?
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Card Without Properties :drill:")
+       (beginning-of-line)
+       ;; Should not error, provide defaults
+       (let ((data (org-drill-get-item-data)))
+         (should (listp data))
+         (should (= (length data) 6)))))))
+
+(ert-deftest test-integration-simple-workflow-error-negative-property-values ()
+  "Test behavior with negative values in properties.
+Negative values should be handled gracefully or sanitized."
+  (let ((content "* Negative Values Card :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: -5
+:DRILL_REPEATS_SINCE_FAIL: -1
+:DRILL_TOTAL_REPEATS: -10
+:DRILL_FAILURE_COUNT: -3
+:DRILL_AVERAGE_QUALITY: -2.5
+:DRILL_EASE: -1.0
+:END:
+
+Question content.
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Negative Values Card :drill:")
+       (beginning-of-line)
+       (let ((data (org-drill-get-item-data)))
+         (should (listp data))
+         ;; Verify system doesn't crash with negative values
+         (should (= (length data) 6)))))))
+
+(ert-deftest test-integration-simple-workflow-error-extremely-large-values ()
+  "Test behavior with extremely large property values.
+Should handle large numbers without overflow or crash."
+  (let ((content "* Large Values Card :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: 999999999
+:DRILL_REPEATS_SINCE_FAIL: 1000000
+:DRILL_TOTAL_REPEATS: 9999999
+:DRILL_FAILURE_COUNT: 500000
+:DRILL_AVERAGE_QUALITY: 5.0
+:DRILL_EASE: 10.0
+:END:
+
+Question content.
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Large Values Card :drill:")
+       (beginning-of-line)
+       (let ((data (org-drill-get-item-data)))
+         (should (listp data))
+         (should (= (length data) 6))
+         ;; Verify scheduling can handle extreme values
+         (cl-destructuring-bind (last-interval repeats failures total-repeats meanq ease)
+             data
+           (let ((result (org-drill-determine-next-interval-sm2
+                          last-interval repeats ease 4
+                          failures meanq total-repeats)))
+             (should (listp result)))))))))
+
+;;; Error Cases - Workflow Error Handling
+
+(ert-deftest test-integration-simple-workflow-error-retrieve-data-not-at-heading ()
+  "Test retrieving data when point is not at a heading.
+Should handle gracefully without crashing."
+  (test-integration-simple-workflow--with-drill-buffer
+   test-integration-simple-workflow-basic-entries
+   (lambda ()
+     ;; Move to body text, not a heading
+     (re-search-forward "Question: What is 2\\+2\\?")
+     (beginning-of-line)
+     ;; Should not crash, may return nil or defaults
+     (let ((data (org-drill-get-item-data)))
+       ;; Just verify it doesn't crash
+       (should (or (null data) (listp data)))))))
+
+(ert-deftest test-integration-simple-workflow-error-retrieve-data-at-non-drill-heading ()
+  "Test retrieving data from heading without drill tag.
+Should handle non-drill headings gracefully."
+  (test-integration-simple-workflow--with-drill-buffer
+   test-integration-simple-workflow-basic-entries
+   (lambda ()
+     ;; Find non-drill heading
+     (re-search-forward "^\\* Not a drill card")
+     (beginning-of-line)
+     (should-not (org-drill-entry-p))
+     ;; Retrieving data from non-drill entry
+     (let ((data (org-drill-get-item-data)))
+       ;; Should not crash
+       (should (or (null data) (listp data)))))))
+
+(ert-deftest test-integration-simple-workflow-error-nested-drill-entries ()
+  "Test handling of nested drill entries (parent and child both tagged).
+Should detect both as separate drill entries."
+  (let ((content "* Parent Drill Entry :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: 5
+:DRILL_REPEATS_SINCE_FAIL: 2
+:DRILL_TOTAL_REPEATS: 3
+:DRILL_FAILURE_COUNT: 0
+:DRILL_AVERAGE_QUALITY: 4.0
+:DRILL_EASE: 2.5
+:END:
+
+Parent question.
+
+** Child Drill Entry :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: 3
+:DRILL_REPEATS_SINCE_FAIL: 1
+:DRILL_TOTAL_REPEATS: 2
+:DRILL_FAILURE_COUNT: 1
+:DRILL_AVERAGE_QUALITY: 3.5
+:DRILL_EASE: 2.3
+:END:
+
+Child question.
+"))
+    (let ((count (test-integration-simple-workflow--count-drill-entries content)))
+      ;; Should find both parent and child as separate entries
+      (should (= count 2)))))
+
+(ert-deftest test-integration-simple-workflow-error-very-deep-nesting ()
+  "Test drill entries at very deep nesting levels.
+Should handle deep heading structures without issues."
+  (let ((content "* Level 1
+** Level 2
+*** Level 3
+**** Level 4
+***** Level 5
+****** Level 6 :drill:
+
+Deep question.
+"))
+    (let ((count (test-integration-simple-workflow--count-drill-entries content)))
+      (should (= count 1)))))
+
+;;; Error Cases - Robustness
+
+(ert-deftest test-integration-simple-workflow-error-unicode-in-properties ()
+  "Test handling of Unicode characters in drill properties.
+Should handle or reject Unicode in numeric properties gracefully."
+  (let ((content "* Unicode Property Card :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: 5
+:DRILL_REPEATS_SINCE_FAIL: 2
+:DRILL_TOTAL_REPEATS: 3
+:DRILL_FAILURE_COUNT: 0
+:DRILL_AVERAGE_QUALITY: 4.0
+:DRILL_EASE: 2.5
+:END:
+
+Question with Unicode: 日本語 Café.
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Unicode Property Card :drill:")
+       (beginning-of-line)
+       ;; Should handle Unicode in content without issues
+       (let ((data (org-drill-get-item-data)))
+         (should (listp data))
+         (should (= (length data) 6)))))))
+
+(ert-deftest test-integration-simple-workflow-error-special-chars-in-heading ()
+  "Test drill entries with special characters in heading.
+Special chars should not interfere with entry detection or data handling."
+  (let ((content "* Card @#$%^&*() Special :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: 5
+:DRILL_REPEATS_SINCE_FAIL: 2
+:DRILL_TOTAL_REPEATS: 3
+:DRILL_FAILURE_COUNT: 0
+:DRILL_AVERAGE_QUALITY: 4.0
+:DRILL_EASE: 2.5
+:END:
+
+Question.
+"))
+    (let ((count (test-integration-simple-workflow--count-drill-entries content)))
+      (should (= count 1)))))
+
+(ert-deftest test-integration-simple-workflow-error-empty-properties-drawer ()
+  "Test drill entry with empty PROPERTIES drawer.
+Should handle empty drawer gracefully."
+  (let ((content "* Empty Drawer Card :drill:
+:PROPERTIES:
+:END:
+
+Question.
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Empty Drawer Card :drill:")
+       (beginning-of-line)
+       (let ((data (org-drill-get-item-data)))
+         ;; Should provide defaults for missing properties
+         (should (listp data))
+         (should (= (length data) 6)))))))
+
+(ert-deftest test-integration-simple-workflow-error-float-in-integer-property ()
+  "Test behavior with float values in expected-integer properties.
+System should handle type coercion or rounding."
+  (let ((content "* Float Values Card :drill:
+:PROPERTIES:
+:DRILL_LAST_INTERVAL: 5.7
+:DRILL_REPEATS_SINCE_FAIL: 2.3
+:DRILL_TOTAL_REPEATS: 3.9
+:DRILL_FAILURE_COUNT: 0.5
+:DRILL_AVERAGE_QUALITY: 4.0
+:DRILL_EASE: 2.5
+:END:
+
+Question.
+"))
+    (test-integration-simple-workflow--with-drill-buffer
+     content
+     (lambda ()
+       (re-search-forward "^\\* Float Values Card :drill:")
+       (beginning-of-line)
+       (let ((data (org-drill-get-item-data)))
+         (should (listp data))
+         ;; Verify system handles float->int conversion
+         (should (numberp (nth 0 data)))
+         (should (numberp (nth 1 data))))))))
+
 (provide 'test-integration-drill-session-simple-workflow-integration-test)
 ;;; test-integration-drill-session-simple-workflow-integration-test.el ends here
