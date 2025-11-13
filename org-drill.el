@@ -609,7 +609,7 @@ interval was greater than ORG-DRILL-DAYS-BEFORE-OLD days.")
     :documentation "Set to the marker for the item currently being tested.")
    (cram-mode
     :initform nil
-    :documementation "Are we in 'cram mode', where all items are considered due
+    :documentation "Are we in 'cram mode', where all items are considered due
 for review unless they were already reviewed in the recent past?")
    (warned-about-id-creation
     :initform nil
