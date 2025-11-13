@@ -2893,7 +2893,9 @@ that many days)."
   (let ((timestamp (org-entry-get (point) "DATE_ADDED")))
     (cond
      (timestamp
-      (- (org-time-stamp-to-now timestamp)))
+      (condition-case nil
+          (- (org-time-stamp-to-now timestamp))
+        (error nil)))
      (use-last-interval-p
       (+ (or (org-drill-entry-days-overdue session) 0)
          (string-to-number (or (org-entry-get (point) "DRILL_LAST_INTERVAL") "0"))))
