@@ -657,8 +657,19 @@ This variable is not functionally important, but is used for
     "DRILL_TOTAL_REPEATS" "DRILL_FAILURE_COUNT" "DRILL_AVERAGE_QUALITY"
     "DRILL_EASE" "DRILL_LAST_QUALITY" "DRILL_LAST_REVIEWED"))
 
+(defcustom org-drill-lapse-threshold-days
+  90
+  "Number of days overdue before an entry is considered lapsed.
+
+When an entry is more than this many days overdue and
+`org-drill--lapse-very-overdue-entries-p' is non-nil, the entry
+is treated as lapsed and will be scheduled as a failure (quality 2)
+even if answered correctly."
+  :group 'org-drill
+  :type 'integer)
+
 (defvar org-drill--lapse-very-overdue-entries-p nil
-  "If non-nil, entries more than 90 days overdue are regarded as \\='lapsed\\='.
+  "If non-nil, entries more than `org-drill-lapse-threshold-days' overdue are lapsed.
 This means that when the item is eventually re-tested it will be
 treated as \\='failed\\=' (quality 2) for rescheduling purposes,
 regardless of whether the test was successful.")
@@ -673,6 +684,7 @@ regardless of whether the test was successful.")
 (put 'org-drill-failure-quality 'safe-local-variable 'integerp)
 (put 'org-drill-forgetting-index 'safe-local-variable 'integerp)
 (put 'org-drill-leech-failure-threshold 'safe-local-variable 'integerp)
+(put 'org-drill-lapse-threshold-days 'safe-local-variable 'integerp)
 (put 'org-drill-leech-method 'safe-local-variable
      '(lambda (val) (memq val '(nil skip warn))))
 (put 'org-drill-use-visible-cloze-face-p 'safe-local-variable 'booleanp)
@@ -2853,7 +2865,8 @@ all the markers used by Org-Drill will be freed."
 ;;; if age < lapse threshold, sort by due (biggest first)
 (defun org-drill-order-overdue-entries (session)
   (let* ((lapsed-days (if org-drill--lapse-very-overdue-entries-p
-                          90 most-positive-fixnum))
+                          org-drill-lapse-threshold-days
+                          most-positive-fixnum))
          (not-lapsed (cl-remove-if (lambda (a) (> (or (cl-second a) 0) lapsed-days))
                                    (oref session overdue-data)))
          (lapsed (cl-remove-if-not
@@ -2869,10 +2882,9 @@ all the markers used by Org-Drill will be freed."
                          (lambda (a b) (> (cl-third a) (cl-third b)))))))))
 
 (defun org-drill--entry-lapsed-p (session)
-  (let ((lapsed-days 90))
-    (and org-drill--lapse-very-overdue-entries-p
-         (> (or (org-drill-entry-days-overdue session) 0)
-            lapsed-days))))
+  (and org-drill--lapse-very-overdue-entries-p
+       (> (or (org-drill-entry-days-overdue session) 0)
+          org-drill-lapse-threshold-days)))
 
 (defun org-drill-entry-days-since-creation (session &optional use-last-interval-p)
   "If USE-LAST-INTERVAL-P is non-nil, and DATE_ADDED is missing, use the
