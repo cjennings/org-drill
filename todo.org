@@ -41,7 +41,8 @@ CLOSED: [2025-11-13]
 
 ** SEVERITY C - MEDIUM PRIORITY ISSUES
 
-*** TODO [#C] Fix inconsistent error handling for empty property blocks (Line 2138)
+*** DONE [#C] Fix inconsistent error handling for empty property blocks (Line 2138)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:2138
 :SEVERITY: C
@@ -53,7 +54,10 @@ Uses =(or (cdr (org-get-property-block)) (point))= which may return invalid posi
 
 *Fix:* Add proper validation and error messaging.
 
-*** TODO [#C] Remove or implement unused variable in commented code (Line 1472)
+*Resolution:* Replaced unsafe fallback with proper positioning logic using org-end-of-meta-data when property block is missing. Commit c524860.
+
+*** DONE [#C] Remove or implement unused variable in commented code (Line 1472)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:1472
 :SEVERITY: C
@@ -65,7 +69,10 @@ Commented-out code referencing =failures= variable suggests incomplete refactori
 
 *Fix:* Either implement intended logic or remove comment.
 
-*** TODO [#C] Fix buffer corruption in org-drill-merge-buffers (Lines 3221-3223)
+*Resolution:* Removed obsolete commented code. The failures variable is already obtained from org-drill-entry-failure-count, making the commented code redundant. Commit b9b34df.
+
+*** DONE [#C] Fix buffer corruption in org-drill-merge-buffers (Lines 3221-3223)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:3164-3252
 :SEVERITY: C
@@ -77,7 +84,10 @@ Function uses =switch-to-buffer= repeatedly, affecting window configuration.
 
 *Fix:* Use =with-current-buffer= instead of =switch-to-buffer=.
 
-*** TODO [#C] Extract hardcoded magic number for lapsed days (Lines 2709-2710, 2726)
+*Resolution:* Replaced switch-to-buffer with with-current-buffer to prevent window state corruption and allow batch mode operation. Commit 1a759fe.
+
+*** DONE [#C] Extract hardcoded magic number for lapsed days (Lines 2709-2710, 2726)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:2709-2710,2726
 :SEVERITY: C
@@ -89,7 +99,10 @@ Value 90 is hardcoded in multiple places.
 
 *Fix:* Define as customizable variable.
 
-*** TODO [#C] Fix incorrect property name in org-drill-show-answer-verb-conjugation (Line 3228)
+*Resolution:* Created org-drill-lapse-threshold-days defcustom (default 90) to replace hardcoded values. Now user-customizable and maintained in one place. Commit 679632c.
+
+*** DONE [#C] Fix incorrect property name in org-drill-show-answer-verb-conjugation (Line 3228)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:3228
 :SEVERITY: C
@@ -101,7 +114,10 @@ Uses =LAST_QUALITY= instead of =DRILL_LAST_QUALITY=.
 
 *Fix:* Change to =DRILL_LAST_QUALITY=
 
-*** TODO [#C] Fix property name typo (Line 3231)
+*Resolution:* Changed LAST_QUALITY to DRILL_LAST_QUALITY to match standard naming convention. Commit 4ce9d67.
+
+*** DONE [#C] Fix property name typo (Line 3231)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:3231
 :SEVERITY: C
@@ -113,7 +129,10 @@ Uses =LAST_REVIEWED= instead of =DRILL_LAST_REVIEWED=.
 
 *Fix:* Change to =DRILL_LAST_REVIEWED=
 
-*** TODO [#C] Add error handling in org-drill-entry-days-since-creation (Line 2738)
+*Resolution:* Changed LAST_REVIEWED to DRILL_LAST_REVIEWED to match standard naming convention. Commit 4ce9d67.
+
+*** DONE [#C] Add error handling in org-drill-entry-days-since-creation (Line 2738)
+CLOSED: [2025-11-13]
 :PROPERTIES:
 :LOCATION: org-drill.el:2738
 :SEVERITY: C
@@ -124,6 +143,8 @@ Uses =LAST_REVIEWED= instead of =DRILL_LAST_REVIEWED=.
 *Impact:* Malformed timestamps in DATE_ADDED property cause unhandled errors.
 
 *Fix:* Wrap in condition-case and return nil or sensible default on error.
+
+*Resolution:* Wrapped org-time-stamp-to-now in condition-case to gracefully handle malformed timestamps by returning nil. Commit 37f8bc7.
 
 ** SEVERITY D - LOW PRIORITY ISSUES
 
