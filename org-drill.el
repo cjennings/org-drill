@@ -2264,8 +2264,15 @@ items if FORCE-SHOW-FIRST or FORCE-SHOW-LAST is non-nil)."
    (org-drill-with-hidden-cloze-hints
     (let ((item-end nil)
           (match-count 0)
-          (body-start (or (cdr (org-get-property-block))
-                          (point))))
+          (body-start (let ((prop-block (org-get-property-block)))
+                        (if prop-block
+                            (cdr prop-block)
+                          (save-excursion
+                            (org-back-to-heading t)
+                            (if (fboundp 'org-end-of-meta-data-and-drawers)
+                                (org-end-of-meta-data-and-drawers)
+                              (org-end-of-meta-data t))
+                            (point))))))
       (if (and force-hide-first force-show-first)
           (error "FORCE-HIDE-FIRST and FORCE-SHOW-FIRST are mutually exclusive"))
       (org-drill-hide-all-subheadings-except nil)
@@ -2335,8 +2342,15 @@ the second to last, etc."
    (org-drill-with-hidden-cloze-hints
     (let ((item-end nil)
           (match-count 0)
-          (body-start (or (cdr (org-get-property-block))
-                          (point)))
+          (body-start (let ((prop-block (org-get-property-block)))
+                        (if prop-block
+                            (cdr prop-block)
+                          (save-excursion
+                            (org-back-to-heading t)
+                            (if (fboundp 'org-end-of-meta-data-and-drawers)
+                                (org-end-of-meta-data-and-drawers)
+                              (org-end-of-meta-data t))
+                            (point)))))
           (cnt 0))
       (org-drill-hide-all-subheadings-except nil)
       (save-excursion
