@@ -3370,22 +3370,22 @@ copy them across."
                  (setq last-reviewed (org-entry-get (point) "DRILL_LAST_REVIEWED")
                        last-quality (org-entry-get (point) "DRILL_LAST_QUALITY")
                        scheduled-time (org-get-scheduled-time (point)))
-                 (save-excursion
-                   ;; go to matching entry in destination buffer
-                   (switch-to-buffer (marker-buffer marker))
-                   (goto-char marker)
-                   (org-drill-strip-entry-data)
-                   (unless (zerop total-repeats)
-                     (org-drill-store-item-data last-interval repetitions failures
-                                                total-repeats meanq ease)
-                     (if last-quality
-                         (org-set-property "LAST_QUALITY" last-quality)
-                       (org-delete-property "LAST_QUALITY"))
-                     (if last-reviewed
-                         (org-set-property "LAST_REVIEWED" last-reviewed)
-                       (org-delete-property "LAST_REVIEWED"))
-                     (if scheduled-time
-                         (org-schedule nil scheduled-time)))))
+                 ;; go to matching entry in destination buffer
+                 (with-current-buffer (marker-buffer marker)
+                   (save-excursion
+                     (goto-char marker)
+                     (org-drill-strip-entry-data)
+                     (unless (zerop total-repeats)
+                       (org-drill-store-item-data last-interval repetitions failures
+                                                  total-repeats meanq ease)
+                       (if last-quality
+                           (org-set-property "LAST_QUALITY" last-quality)
+                         (org-delete-property "LAST_QUALITY"))
+                       (if last-reviewed
+                           (org-set-property "LAST_REVIEWED" last-reviewed)
+                         (org-delete-property "LAST_REVIEWED"))
+                       (if scheduled-time
+                           (org-schedule nil scheduled-time))))))
                (remhash id org-drill-dest-id-table)
                (set-marker marker nil)))
             (t
