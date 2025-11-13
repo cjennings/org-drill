@@ -6,17 +6,6 @@
 
 ** SEVERITY B - HIGH PRIORITY BUGS
 
-*** TODO [#A] Fix potential division by zero (Line 887)
-:PROPERTIES:
-:LOCATION: org-drill.el:887
-:SEVERITY: B
-:END:
-
-Division by =last-interval= without checking if it's zero in =org-drill-entry-overdue-p=.
-
-*Impact:* If =last-interval= is 0 (new items or after failures), causes division-by-zero error and crashes drill session.
-
-*Fix:* Add check: =(and (> last-interval 0) (> (/ ...) ...))=
 
 *** TODO [#A] Fix infinite loop in marker selection (Lines 2498-2500)
 :PROPERTIES:
@@ -608,3 +597,20 @@ Function didn't return a value when =(= 2 (length args))= is true but =org-get-l
 - Added explanatory comment
 
 *Resolution:* Fixed in commit df3a67f
+
+*** DONE [#A] Fix potential division by zero in org-drill-entry-overdue-p
+CLOSED: [2025-11-13 Wed]
+:PROPERTIES:
+:LOCATION: org-drill.el:935
+:SEVERITY: B
+:END:
+
+Division by =last-interval= without checking if it's zero in =org-drill-entry-overdue-p=.
+
+*Impact:* If =last-interval= is 0 (new items or after failures), causes division-by-zero error and crashes drill session.
+
+*Fix Applied:*
+- Added check =(> last-interval 0)= before the division operation
+- Prevents division by zero for new items or items after failures
+
+*Resolution:* Fixed in commit becb992
