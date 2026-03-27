@@ -1848,7 +1848,7 @@ Consider reformulating the item to make it easier to remember.\n"
           (let ((buf
                  (org-drill-response-get-buffer-create)))
             (select-window
-             (display-buffer-below-selected buf nil))
+             (display-buffer buf '(display-buffer-below-selected)))
             ;; Store the current session in a variable, so that it can
             ;; be picked up by the when we leave the buffer
             (setq-local org-drill-current-session session)
