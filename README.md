@@ -2,6 +2,8 @@
 
 Please see [the history](#history) of this repository.
 
+**Note: this is a maintained fork** of [phillord/org-drill](https://gitlab.com/phillord/org-drill). Some upstream merge requests have been applied here that aren't merged on the original — notably Org 9.6 timestamp-format compatibility and a `display-buffer` calling-convention fix for newer Emacs versions. If you've been hitting those errors, this fork may help.
+
 Org-Drill is an extension for [Org
 mode](http://orgmode.org/). Org-Drill uses a [spaced
 repetition](http://en.wikipedia.org/wiki/Spaced_repetition) algorithm
@@ -1041,3 +1043,7 @@ to test all of its functionality automatically, so I expect
 breakages. In addition, some of the interfaces for card types has
 changed, and some functionality which is unmaintainable is being
 removed! Please be patient and report problems!
+
+# About this fork
+
+The **Author** and **History** sections above are from the upstream project (originally by Paul Sexton, then maintained by Phillip Lord). This GitHub repository is a fork by Craig Jennings, applying community-contributed fixes that hadn't been merged upstream as of mid-2026. The upstream history is preserved unchanged. For the original project, see [phillord/org-drill](https://gitlab.com/phillord/org-drill).
