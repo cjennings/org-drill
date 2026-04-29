@@ -1340,6 +1340,7 @@ See the documentation for `org-drill-get-item-data' for a description of these."
     (cond
      ((<= quality org-drill-failure-quality)
       (cl-incf failures)
+      (cl-incf totaln)
       (setf repeats 0
             next-interval -1))
      ((or (zerop repeats)
