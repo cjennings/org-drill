@@ -193,14 +193,15 @@
       (should (numberp interval))
       (should (> interval 0)))))
 
-(ert-deftest test-org-drill-determine-next-interval-simple8-boundary-totaln-increments-on-success-only ()
-  "Boundary: totaln increments on success but NOT on failure (Simple8-specific)."
+(ert-deftest test-org-drill-determine-next-interval-simple8-boundary-totaln-increments-on-both-paths ()
+  "Boundary: totaln increments on both success and failure paths.
+This matches the SM2 and SM5 behavior so DRILL_TOTAL_REPEATS counts every
+review attempt regardless of which scheduling algorithm produced it."
   (let* ((totaln 42)
          (result-success (org-drill-determine-next-interval-simple8 0 0 4 0 nil totaln nil))
          (result-failure (org-drill-determine-next-interval-simple8 10 3 0 0 nil totaln nil)))
     (should (= (test-scheduler--extract-total-repeats result-success) (1+ totaln)))
-    ;; SM2/SM5 always increment; Simple8 does not on the failure path.
-    (should (= (test-scheduler--extract-total-repeats result-failure) totaln))))
+    (should (= (test-scheduler--extract-total-repeats result-failure) (1+ totaln)))))
 
 ;;; Error Cases - cl-assert violations
 
