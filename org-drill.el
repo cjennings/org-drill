@@ -2889,8 +2889,13 @@ all the markers used by Org-Drill will be freed."
 ;;; where POS is a marker pointing to the start of the entry, and
 ;;; DUE is a number indicating how many days ago the entry was due.
 ;;; AGE is the number of days elapsed since item creation (nil if unknown).
-;;; if age > lapse threshold (default 90), sort by age (oldest first)
-;;; if age < lapse threshold, sort by due (biggest first)
+;;;
+;;; Sort order:
+;;;   1. Split by DUE: entries with DUE > org-drill-lapse-threshold-days
+;;;      are "lapsed", the rest are "not-lapsed".  This matches the gate
+;;;      in `org-drill--entry-lapsed-p'.
+;;;   2. Not-lapsed are sorted by DUE descending (most-overdue first).
+;;;   3. Lapsed are appended after, sorted by AGE descending (oldest first).
 (defun org-drill-order-overdue-entries (session)
   (let* ((lapsed-days (if org-drill--lapse-very-overdue-entries-p
                           org-drill-lapse-threshold-days
