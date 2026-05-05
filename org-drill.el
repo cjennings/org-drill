@@ -294,8 +294,7 @@ This is a buffer-local variable.")
     ("decline_noun"
      org-drill-present-noun-declension
      org-drill-show-answer-noun-declension)
-    ("spanish_verb" org-drill-present-spanish-verb)
-    ("translate_number" org-drill-present-translate-number))
+    ("spanish_verb" org-drill-present-spanish-verb))
   "Alist associating card types with presentation functions.
 
 Each entry in the alist takes the form:
