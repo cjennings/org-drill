@@ -248,11 +248,14 @@ The SM5 floor is shared with SM2 via `org-drill-modify-e-factor'.")
   "Assert BODY signals a cl-assertion-failed via condition-case.
 
 Mirrors the simple8 test file's helper.  See its commentary for why
-this avoids `should-error' / `should' on Emacs 29.4."
-  `(condition-case _err
-       (progn ,@body
-              (ert-fail "expected cl-assertion-failed signal, got none"))
-     (cl-assertion-failed nil)))
+shadowing `signal-hook-function' is necessary on Emacs 29.4."
+  `(let ((caught
+          (let ((signal-hook-function nil))
+            (condition-case _err
+                (progn ,@body 'no-error)
+              (cl-assertion-failed 'caught)))))
+     (unless (eq caught 'caught)
+       (ert-fail "expected cl-assertion-failed signal, got none"))))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-negative-n ()
   "Error: n=-1 violates the (cl-assert (> n 0)) precondition."

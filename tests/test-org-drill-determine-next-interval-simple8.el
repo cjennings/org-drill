@@ -208,20 +208,28 @@ review attempt regardless of which scheduling algorithm produced it."
 (defmacro test-scheduler--should-cl-assert (&rest body)
   "Assert BODY signals a cl-assertion-failed via condition-case.
 
-Avoids `should-error' (and `should' generally) because ERT in Emacs
-29.4 installs `signal-hook-function' around `should' forms — that
-hook intercepts signals before any inner condition-case can catch
-them, so the plain (should-error ...) wrap fails on 29.4 even
-though the cl-assertion-failed signal does fire.
+ERT 29.4 installs `ert--should-signal-hook' as `signal-hook-function'
+around the entire `ert-deftest' body — not just `should' forms.  That
+hook intercepts every signal before any inner `condition-case' can
+catch it, so the obvious (should-error FORM) and even a manual
+condition-case both fail on 29.4 even though cl-assertion-failed
+clearly fires (visible in the test-failure backtrace).
+
+The fix is to shadow `signal-hook-function' to nil inside our
+wrapper, letting condition-case catch normally.  The ert-fail call
+on the no-error path runs after our shadowing scope exits, so it
+still routes through ERT's normal failure handling.
 
 Catches `cl-assertion-failed' by name rather than via the generic
-`error' parent: the parent inheritance for cl-assertion-failed is
-inconsistent across Emacs versions, but the symbol-name match
-through condition-case always works."
-  `(condition-case _err
-       (progn ,@body
-              (ert-fail "expected cl-assertion-failed signal, got none"))
-     (cl-assertion-failed nil)))
+`error' parent — inheritance varies across Emacs versions but the
+symbol-name match through condition-case always works."
+  `(let ((caught
+          (let ((signal-hook-function nil))
+            (condition-case _err
+                (progn ,@body 'no-error)
+              (cl-assertion-failed 'caught)))))
+     (unless (eq caught 'caught)
+       (ert-fail "expected cl-assertion-failed signal, got none"))))
 
 (ert-deftest test-org-drill-determine-next-interval-simple8-error-negative-repeats ()
   "Error: repeats=-1 violates the (cl-assert (>= repeats 0)) precondition."
