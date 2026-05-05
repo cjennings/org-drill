@@ -823,6 +823,16 @@ Returns scope as defined by `org-map-entries'"
            ,@body)
        (org-drill-unhide-text))))
 
+(defmacro org-drill-with-card-display (&rest body)
+  "Eval BODY in the standard card-display envelope.
+Combines `with-hidden-comments', `with-hidden-cloze-hints', and
+`with-hidden-cloze-text' — the wrap most card presenters open with."
+  (declare (debug t) (indent 0))
+  `(org-drill-with-hidden-comments
+    (org-drill-with-hidden-cloze-hints
+     (org-drill-with-hidden-cloze-text
+      ,@body))))
+
 (defun org-drill-days-since-last-review ()
   "Nil means a last review date has not yet been stored for
 the item.
@@ -2170,16 +2180,14 @@ heading, which truncates the search range before the child's body."
 ;; recall, nil if they chose to quit.
 (defun org-drill-present-simple-card (session)
   "Present a simple card."
-  (org-drill-with-hidden-comments
-   (org-drill-with-hidden-cloze-hints
-    (org-drill-with-hidden-cloze-text
-     (org-drill-hide-all-subheadings-except nil)
-     (org-drill--show-latex-fragments)  ; overlay all LaTeX fragments with images
-     (ignore-errors
-       (org-display-inline-images t))
-     (org-drill-hide-drawers)
-     (prog1 (org-drill-presentation-prompt session)
-       (org-drill-hide-subheadings-if 'org-drill-entry-p))))))
+  (org-drill-with-card-display
+    (org-drill-hide-all-subheadings-except nil)
+    (org-drill--show-latex-fragments)  ; overlay all LaTeX fragments with images
+    (ignore-errors
+      (org-display-inline-images t))
+    (org-drill-hide-drawers)
+    (prog1 (org-drill-presentation-prompt session)
+      (org-drill-hide-subheadings-if 'org-drill-entry-p))))
 
 (defun org-drill-present-default-answer (session reschedule-fn)
   "Present a default answer.
@@ -2214,16 +2222,14 @@ RESCHEDULE-FN is the function to reschedule."
 
 (defun org-drill-present-simple-card-with-typed-answer (session)
   "Present a simple card with a typed answer."
-  (org-drill-with-hidden-comments
-   (org-drill-with-hidden-cloze-hints
-    (org-drill-with-hidden-cloze-text
-     (org-drill-hide-all-subheadings-except nil)
-     (org-drill--show-latex-fragments)  ; overlay all LaTeX fragments with images
-     (ignore-errors
-       (org-display-inline-images t))
-     (org-drill-hide-drawers)
-     (prog1 (org-drill-presentation-prompt-for-string session nil)
-       (org-drill-hide-subheadings-if 'org-drill-entry-p))))))
+  (org-drill-with-card-display
+    (org-drill-hide-all-subheadings-except nil)
+    (org-drill--show-latex-fragments)  ; overlay all LaTeX fragments with images
+    (ignore-errors
+      (org-display-inline-images t))
+    (org-drill-hide-drawers)
+    (prog1 (org-drill-presentation-prompt-for-string session nil)
+      (org-drill-hide-subheadings-if 'org-drill-entry-p))))
 
 (defun org-drill--show-latex-fragments ()
   "Show LaTeX fragments as inline images.
@@ -2236,37 +2242,33 @@ which is the right behavior."
     (org-latex-preview '(16))))
 
 (defun org-drill-present-two-sided-card (session)
-  (org-drill-with-hidden-comments
-   (org-drill-with-hidden-cloze-hints
-    (org-drill-with-hidden-cloze-text
-     (let ((drill-sections (org-drill-hide-all-subheadings-except nil)))
-       (when drill-sections
-         (save-excursion
-           (goto-char (nth (cl-random (min 2 (length drill-sections)))
-                           drill-sections))
-           (org-fold-show-subtree)))
-       (org-drill--show-latex-fragments)
-       (ignore-errors
-         (org-display-inline-images t))
-       (org-drill-hide-drawers)
-       (prog1 (org-drill-presentation-prompt session)
-         (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
+  (org-drill-with-card-display
+    (let ((drill-sections (org-drill-hide-all-subheadings-except nil)))
+      (when drill-sections
+        (save-excursion
+          (goto-char (nth (cl-random (min 2 (length drill-sections)))
+                          drill-sections))
+          (org-fold-show-subtree)))
+      (org-drill--show-latex-fragments)
+      (ignore-errors
+        (org-display-inline-images t))
+      (org-drill-hide-drawers)
+      (prog1 (org-drill-presentation-prompt session)
+        (org-drill-hide-subheadings-if 'org-drill-entry-p)))))
 
 (defun org-drill-present-multi-sided-card (session)
-  (org-drill-with-hidden-comments
-   (org-drill-with-hidden-cloze-hints
-    (org-drill-with-hidden-cloze-text
-     (let ((drill-sections (org-drill-hide-all-subheadings-except nil)))
-       (when drill-sections
-         (save-excursion
-           (goto-char (nth (cl-random (length drill-sections)) drill-sections))
-           (org-fold-show-subtree)))
-       (org-drill--show-latex-fragments)
-       (ignore-errors
-         (org-display-inline-images t))
-       (org-drill-hide-drawers)
-       (prog1 (org-drill-presentation-prompt session)
-         (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
+  (org-drill-with-card-display
+    (let ((drill-sections (org-drill-hide-all-subheadings-except nil)))
+      (when drill-sections
+        (save-excursion
+          (goto-char (nth (cl-random (length drill-sections)) drill-sections))
+          (org-fold-show-subtree)))
+      (org-drill--show-latex-fragments)
+      (ignore-errors
+        (org-display-inline-images t))
+      (org-drill-hide-drawers)
+      (prog1 (org-drill-presentation-prompt session)
+        (org-drill-hide-subheadings-if 'org-drill-entry-p)))))
 
 (defun org-drill-present-multicloze-hide-n (session
                                             number-to-hide
@@ -3651,17 +3653,15 @@ Each card-presentation chooses one at random, hiding all subheadings
 except REVEAL and showing PROMPT in the rating prompt.")
 
 (defun org-drill-present-spanish-verb (session)
-  (org-drill-with-hidden-comments
-   (org-drill-with-hidden-cloze-hints
-    (org-drill-with-hidden-cloze-text
-     (let* ((choice (nth (cl-random (length org-drill--spanish-verb-prompts))
-                         org-drill--spanish-verb-prompts))
-            (reveal (car choice))
-            (prompt (cdr choice)))
-       (org-drill-hide-all-subheadings-except (list reveal))
-       (org-drill-hide-drawers)
-       (prog1 (org-drill-presentation-prompt session prompt)
-         (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
+  (org-drill-with-card-display
+    (let* ((choice (nth (cl-random (length org-drill--spanish-verb-prompts))
+                        org-drill--spanish-verb-prompts))
+           (reveal (car choice))
+           (prompt (cdr choice)))
+      (org-drill-hide-all-subheadings-except (list reveal))
+      (org-drill-hide-drawers)
+      (prog1 (org-drill-presentation-prompt session prompt)
+        (org-drill-hide-subheadings-if 'org-drill-entry-p)))))
 
 ;; org-drill :explain: implementations
 (defun org-drill-get-explain-text (&optional existing-text)
