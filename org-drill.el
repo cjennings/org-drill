@@ -401,15 +401,26 @@ Available choices are:
   :group 'org-drill
   :type '(choice (const sm2) (const sm5) (const simple8)))
 
-(persist-defvar org-drill-sm5-optimal-factor-matrix
-  nil
-  "DO NOT CHANGE THE VALUE OF THIS VARIABLE.
+;; Wrap `persist-defvar' in `condition-case' so a corrupted persist
+;; file (upstream issue #45 — "End of file during parsing" raised from
+;; deep inside the persist package) doesn't prevent org-drill from
+;; loading.  Fall back to a fresh nil matrix when persist-load fails.
+(condition-case err
+    (persist-defvar org-drill-sm5-optimal-factor-matrix
+      nil
+      "DO NOT CHANGE THE VALUE OF THIS VARIABLE.
 
 Persistent matrix of optimal factors, used by the SuperMemo SM5
 algorithm. The matrix is saved at the end of each drill session.
 
 Over time, values in the matrix will adapt to the individual user's
 pace of learning.")
+  (error
+   (message
+    "org-drill: failed to load persisted SM5 matrix (%s); using fresh state"
+    err)
+   (defvar org-drill-sm5-optimal-factor-matrix nil
+     "Persistent matrix of optimal factors (fallback after load failure).")))
 
 (defcustom org-drill-sm5-initial-interval
   4.0
