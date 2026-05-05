@@ -3075,30 +3075,40 @@ STATUS is one of the following values:
       (length (oref session failed-entries)))
    (cl-incf (oref session cnt)))
   (when (org-drill-entry-p)
-    (org-drill-id-get-create-with-warning session)
-    (cl-destructuring-bind (status due age)
-        (org-drill-entry-status session)
-      (cl-case status
-        (:unscheduled
-         (cl-incf (oref session dormant-entry-count)))
-        ;; (:tomorrow
-        ;;  (cl-incf *org-drill-dormant-entry-count*)
-        ;;  (cl-incf *org-drill-due-tomorrow-count*))
-        (:future
-         (cl-incf (oref session dormant-entry-count))
-         (if (eq -1 due)
-             (cl-incf (oref session due-tomorrow-count))))
-        (:new
-         (push (point-marker) (oref session new-entries)))
-        (:failed
-         (push (point-marker) (oref session failed-entries)))
-        (:young
-         (push (point-marker) (oref session young-mature-entries)))
-        (:overdue
-         (push (list (point-marker) due age) (oref session overdue-data)))
-        (:old
-         (push (point-marker) (oref session old-mature-entries)))
-        ))))
+    ;; Per-entry processing is wrapped in `condition-case' so a single
+    ;; bad entry doesn't kill the whole collection scan.  Upstream
+    ;; issue #53 reported that a new (no-ID) entry triggered a
+    ;; "hash-table-p, nil" error that stopped the scan, leaving every
+    ;; subsequent entry uncollected — the user had to re-run org-drill
+    ;; once per item.  Catching the error here lets the scan continue.
+    (condition-case err
+        (progn
+          (org-drill-id-get-create-with-warning session)
+          (cl-destructuring-bind (status due age)
+              (org-drill-entry-status session)
+            (cl-case status
+              (:unscheduled
+               (cl-incf (oref session dormant-entry-count)))
+              ;; (:tomorrow
+              ;;  (cl-incf *org-drill-dormant-entry-count*)
+              ;;  (cl-incf *org-drill-due-tomorrow-count*))
+              (:future
+               (cl-incf (oref session dormant-entry-count))
+               (if (eq -1 due)
+                   (cl-incf (oref session due-tomorrow-count))))
+              (:new
+               (push (point-marker) (oref session new-entries)))
+              (:failed
+               (push (point-marker) (oref session failed-entries)))
+              (:young
+               (push (point-marker) (oref session young-mature-entries)))
+              (:overdue
+               (push (list (point-marker) due age) (oref session overdue-data)))
+              (:old
+               (push (point-marker) (oref session old-mature-entries))))))
+      (error
+       (message "org-drill: error processing entry at %s (%s); skipping"
+                (point) err)))))
 
 (defun org-drill-id-get-create-with-warning(session)
   (when (and (not (oref session warned-about-id-creation))
