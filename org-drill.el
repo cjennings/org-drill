@@ -3383,6 +3383,77 @@ the tag \\='imported\\='."
           (paste-tree-here (1+ (or (org-current-level) 0)))
           )))))
 
+(defun org-drill--build-dest-id-table (dest)
+  "Populate `org-drill-dest-id-table' with id→marker for every entry in DEST."
+  (clrhash org-drill-dest-id-table)
+  (with-current-buffer dest
+    (org-drill-map-entries
+     (lambda ()
+       (let ((this-id (org-id-get)))
+         (when this-id
+           (puthash this-id (point-marker) org-drill-dest-id-table))))
+     'file)))
+
+(defun org-drill--copy-scheduling-to-marker (marker)
+  "Copy the current entry's scheduling state to MARKER's position.
+The destination's previous data is stripped first.  Skips zero-
+total-repeats items (i.e., never-rated cards) — those have no
+scheduling information worth migrating."
+  (cl-destructuring-bind (last-interval repetitions failures
+                                        total-repeats meanq ease)
+      (org-drill-get-item-data)
+    (let ((last-reviewed (org-entry-get (point) "DRILL_LAST_REVIEWED"))
+          (last-quality (org-entry-get (point) "DRILL_LAST_QUALITY"))
+          (scheduled-time (org-get-scheduled-time (point))))
+      (with-current-buffer (marker-buffer marker)
+        (save-excursion
+          (goto-char marker)
+          (org-drill-strip-entry-data)
+          (unless (zerop total-repeats)
+            (org-drill-store-item-data last-interval repetitions failures
+                                       total-repeats meanq ease)
+            (if last-quality
+                (org-set-property "DRILL_LAST_QUALITY" last-quality)
+              (org-delete-property "DRILL_LAST_QUALITY"))
+            (if last-reviewed
+                (org-set-property "DRILL_LAST_REVIEWED" last-reviewed)
+              (org-delete-property "DRILL_LAST_REVIEWED"))
+            (when scheduled-time
+              (org-schedule nil scheduled-time))))))))
+
+(defun org-drill--migrate-from-source (src dest ignore-new-items-p)
+  "Walk SRC's entries, migrating scheduling data into matching DEST entries.
+Removes matched IDs from `org-drill-dest-id-table' as it goes, so the
+caller can clean up unmatched DEST entries afterwards.  Entries with
+no DEST match are copied into DEST as new items unless IGNORE-NEW-ITEMS-P."
+  (with-current-buffer src
+    (org-drill-map-entries
+     (lambda ()
+       (let ((id (org-id-get)))
+         (cond
+          ((or (null id) (not (org-drill-entry-p))) nil)
+          ((gethash id org-drill-dest-id-table)
+           (let ((marker (gethash id org-drill-dest-id-table)))
+             (org-drill--copy-scheduling-to-marker marker)
+             (remhash id org-drill-dest-id-table)
+             (set-marker marker nil)))
+          (t
+           ;; Item in SRC has an ID but no match in DEST — new item.
+           (unless ignore-new-items-p
+             (org-drill-copy-entry-to-other-buffer dest))))))
+     'file)))
+
+(defun org-drill--strip-unmatched-dest-entries ()
+  "Strip scheduling data from every entry left in `org-drill-dest-id-table'.
+Anything still in the table after migration didn't have a matching
+SRC entry — its scheduling info came from a different deck and the
+deck owner is opting in to a clean migration."
+  (maphash (lambda (_id m)
+             (goto-char m)
+             (org-drill-strip-entry-data)
+             (set-marker m nil))
+           org-drill-dest-id-table))
+
 (defun org-drill-merge-buffers (src &optional dest ignore-new-items-p)
   "SRC and DEST are two org mode buffers containing drill items.
 For each drill item in DEST that shares an ID with an item in SRC,
@@ -3407,71 +3478,10 @@ copy them across."
           (concat "About to overwrite all scheduling data for drill items in `%s' "
                   "with information taken from matching items in `%s'. Proceed? ")
           (buffer-name dest) (buffer-name src)))
-    ;; Compile list of all IDs in the destination buffer.
-    (clrhash org-drill-dest-id-table)
+    (org-drill--build-dest-id-table dest)
+    (org-drill--migrate-from-source src dest ignore-new-items-p)
     (with-current-buffer dest
-      (org-drill-map-entries
-       (lambda ()
-         (let ((this-id (org-id-get)))
-           (when this-id
-             (puthash this-id (point-marker) org-drill-dest-id-table))))
-       'file))
-    ;; Look through all entries in source buffer.
-    (with-current-buffer src
-      (org-drill-map-entries
-       (lambda ()
-         (let ((id (org-id-get))
-               (last-quality nil) (last-reviewed nil)
-               (scheduled-time nil))
-           (cond
-            ((or (null id)
-                 (not (org-drill-entry-p)))
-             nil)
-            ((gethash id org-drill-dest-id-table)
-             ;; This entry matches an entry in dest. Retrieve all its
-             ;; scheduling data, then go to the matching location in dest
-             ;; and write the data.
-             (let ((marker (gethash id org-drill-dest-id-table)))
-               (cl-destructuring-bind (last-interval repetitions failures
-                                                  total-repeats meanq ease)
-                   (org-drill-get-item-data)
-                 (setq last-reviewed (org-entry-get (point) "DRILL_LAST_REVIEWED")
-                       last-quality (org-entry-get (point) "DRILL_LAST_QUALITY")
-                       scheduled-time (org-get-scheduled-time (point)))
-                 ;; go to matching entry in destination buffer
-                 (with-current-buffer (marker-buffer marker)
-                   (save-excursion
-                     (goto-char marker)
-                     (org-drill-strip-entry-data)
-                     (unless (zerop total-repeats)
-                       (org-drill-store-item-data last-interval repetitions failures
-                                                  total-repeats meanq ease)
-                       (if last-quality
-                           (org-set-property "DRILL_LAST_QUALITY" last-quality)
-                         (org-delete-property "DRILL_LAST_QUALITY"))
-                       (if last-reviewed
-                           (org-set-property "DRILL_LAST_REVIEWED" last-reviewed)
-                         (org-delete-property "DRILL_LAST_REVIEWED"))
-                       (if scheduled-time
-                           (org-schedule nil scheduled-time))))))
-               (remhash id org-drill-dest-id-table)
-               (set-marker marker nil)))
-            (t
-             ;; item in SRC has ID, but no matching ID in DEST.
-             ;; It must be a new item that does not exist in DEST.
-             ;; Copy the entire item to the *end* of DEST.
-             (unless ignore-new-items-p
-               (org-drill-copy-entry-to-other-buffer dest))))))
-       'file))
-    ;; Finally: there may be some items in DEST which are not in SRC, and
-    ;; which have been scheduled by another user of DEST. Clear out the
-    ;; scheduling info from all the unmatched items in DEST.
-    (with-current-buffer dest
-      (maphash (lambda (_id m)
-                 (goto-char m)
-                 (org-drill-strip-entry-data)
-                 (set-marker m nil))
-               org-drill-dest-id-table))))
+      (org-drill--strip-unmatched-dest-entries))))
 
 
 
