@@ -91,6 +91,24 @@ because the cond compared nil with `=' before the type-guard."
       (let ((scheduled (current-scheduled-time-string)))
         (should scheduled)))))
 
+;;;; Algorithm dispatch (covers the cl-case branches in smart-reschedule)
+
+(ert-deftest test-org-drill-smart-reschedule-sm2-algorithm-schedules ()
+  "With sm2 selected, smart-reschedule still produces a SCHEDULED stamp."
+  (with-fresh-drill-entry
+    (with-fixed-now
+      (let ((org-drill-spaced-repetition-algorithm 'sm2))
+        (org-drill-smart-reschedule 5))
+      (should (current-scheduled-time-string)))))
+
+(ert-deftest test-org-drill-smart-reschedule-simple8-algorithm-schedules ()
+  "With simple8 selected, smart-reschedule still produces a SCHEDULED stamp."
+  (with-fresh-drill-entry
+    (with-fixed-now
+      (let ((org-drill-spaced-repetition-algorithm 'simple8))
+        (org-drill-smart-reschedule 5))
+      (should (current-scheduled-time-string)))))
+
 ;;;; Property side-effects
 
 (ert-deftest test-org-drill-smart-reschedule-writes-drill-properties ()
