@@ -2802,18 +2802,16 @@ RESUMING-P is true if we are resuming a suspended drill session."
 Returns 0 when QUALITIES is empty (instead of dividing by zero)."
   (round (* 100 (cl-count q qualities)) (max 1 (length qualities))))
 
-(defun org-drill-final-report (session)
-  (let* ((qualities (oref session qualities))
-         (pass-percent
-          (round (* 100 (cl-count-if (lambda (qual)
-                                       (> qual org-drill-failure-quality))
-                                     qualities))
-                 (max 1 (length qualities))))
-         (prompt nil)
-         (max-mini-window-height 0.6))
-    (setq prompt
-          (format
-           "%d items reviewed. Session duration %s.
+(defun org-drill--queue-tag (count label face-color)
+  "Build a propertized \"COUNT LABEL\" string for the final-report queue summary."
+  (propertize (format "%d %s" count label)
+              'face `(:foreground ,face-color)))
+
+(defun org-drill--build-final-report-summary (session pass-percent qualities)
+  "Build the main `Session finished' message for SESSION.
+PASS-PERCENT and QUALITIES come from the caller to avoid recomputing."
+  (format
+   "%d items reviewed. Session duration %s.
 Recall of reviewed items:
  Excellent (5):     %3d%%   |   Near miss (2):      %3d%%
  Good (4):          %3d%%   |   Failure (1):        %3d%%
@@ -2823,55 +2821,38 @@ You successfully recalled %d%% of reviewed items (quality > %s)
 %d/%d items still await review (%s, %s, %s, %s, %s).
 Tomorrow, %d more items will become due for review.
 Session finished. Press a key to continue..."
-           (length (oref session done-entries))
-           (format-seconds "%h:%.2m:%.2s"
-                           (- (float-time (current-time))
-                              (oref session start-time)))
-           (org-drill--quality-percent 5 qualities)
-           (org-drill--quality-percent 2 qualities)
-           (org-drill--quality-percent 4 qualities)
-           (org-drill--quality-percent 1 qualities)
-           (org-drill--quality-percent 3 qualities)
-           (org-drill--quality-percent 0 qualities)
-           pass-percent
-           org-drill-failure-quality
-           (org-drill-pending-entry-count session)
-           (+ (org-drill-pending-entry-count session)
-              (oref session dormant-entry-count))
-           (propertize
-            (format "%d failed"
-                    (+ (length (oref session failed-entries))
-                       (length (oref session again-entries))))
-            'face `(:foreground ,org-drill-failed-count-color))
-           (propertize
-            (format "%d overdue"
-                    (length (oref session overdue-entries)))
-            'face `(:foreground ,org-drill-failed-count-color))
-           (propertize
-            (format "%d new"
-                    (length (oref session new-entries)))
-            'face `(:foreground ,org-drill-new-count-color))
-           (propertize
-            (format "%d young"
-                    (length (oref session young-mature-entries)))
-            'face `(:foreground ,org-drill-mature-count-color))
-           (propertize
-            (format "%d old"
-                    (length (oref session old-mature-entries)))
-            'face `(:foreground ,org-drill-mature-count-color))
-           (oref session due-tomorrow-count)
-           ))
+   (length (oref session done-entries))
+   (format-seconds "%h:%.2m:%.2s"
+                   (- (float-time (current-time))
+                      (oref session start-time)))
+   (org-drill--quality-percent 5 qualities)
+   (org-drill--quality-percent 2 qualities)
+   (org-drill--quality-percent 4 qualities)
+   (org-drill--quality-percent 1 qualities)
+   (org-drill--quality-percent 3 qualities)
+   (org-drill--quality-percent 0 qualities)
+   pass-percent
+   org-drill-failure-quality
+   (org-drill-pending-entry-count session)
+   (+ (org-drill-pending-entry-count session)
+      (oref session dormant-entry-count))
+   (org-drill--queue-tag (+ (length (oref session failed-entries))
+                            (length (oref session again-entries)))
+                         "failed" org-drill-failed-count-color)
+   (org-drill--queue-tag (length (oref session overdue-entries))
+                         "overdue" org-drill-failed-count-color)
+   (org-drill--queue-tag (length (oref session new-entries))
+                         "new" org-drill-new-count-color)
+   (org-drill--queue-tag (length (oref session young-mature-entries))
+                         "young" org-drill-mature-count-color)
+   (org-drill--queue-tag (length (oref session old-mature-entries))
+                         "old" org-drill-mature-count-color)
+   (oref session due-tomorrow-count)))
 
-    (while (not (input-pending-p))
-      (message "%s" prompt)
-      (sit-for 0.5))
-    (read-char-exclusive)
-
-    (if (and qualities
-             (< pass-percent (- 100 org-drill-forgetting-index)))
-        (read-char-exclusive
-         (format
-          "%s
+(defun org-drill--build-low-pass-warning (session pass-percent)
+  "Build the WARNING prompt shown when PASS-PERCENT is below threshold."
+  (format
+   "%s
 You failed %d%% of the items you reviewed during this session.
 %d (%d%%) of all items scanned were overdue.
 
@@ -2879,18 +2860,35 @@ Are you keeping up with your items, and reviewing them
 when they are scheduled? If so, you may want to consider
 lowering the value of `org-drill-learn-fraction' slightly in
 order to make items appear more frequently over time."
-          (propertize "WARNING!" 'face 'org-warning)
-          (- 100 pass-percent)
-          (oref session overdue-entry-count)
-          ;; Guard the divisor — both counts are zero in degenerate
-          ;; scopes (e.g., cram mode with nothing collected, or a
-          ;; pure-failure session on empty queues), and the original
-          ;; `(/ ... 0)' raised arith-error before the warning could
-          ;; even render.
-          (round (* 100 (oref session overdue-entry-count))
-                 (max 1 (+ (oref session dormant-entry-count)
-                           (oref session due-entry-count)))))
-         ))))
+   (propertize "WARNING!" 'face 'org-warning)
+   (- 100 pass-percent)
+   (oref session overdue-entry-count)
+   ;; Divisor is wrapped in (max 1 ...) — both counts are zero in
+   ;; degenerate scopes (cram with nothing collected, pure-failure
+   ;; session on empty queues), and (/ ... 0) raised arith-error
+   ;; before the warning could even render.
+   (round (* 100 (oref session overdue-entry-count))
+          (max 1 (+ (oref session dormant-entry-count)
+                    (oref session due-entry-count))))))
+
+(defun org-drill-final-report (session)
+  (let* ((qualities (oref session qualities))
+         (pass-percent
+          (round (* 100 (cl-count-if (lambda (qual)
+                                       (> qual org-drill-failure-quality))
+                                     qualities))
+                 (max 1 (length qualities))))
+         (prompt (org-drill--build-final-report-summary
+                  session pass-percent qualities))
+         (max-mini-window-height 0.6))
+    (while (not (input-pending-p))
+      (message "%s" prompt)
+      (sit-for 0.5))
+    (read-char-exclusive)
+    (when (and qualities
+               (< pass-percent (- 100 org-drill-forgetting-index)))
+      (read-char-exclusive
+       (org-drill--build-low-pass-warning session pass-percent)))))
 
 (defun org-drill-free-markers (session markers)
   "MARKERS is a list of markers, all of which will be freed (set to
