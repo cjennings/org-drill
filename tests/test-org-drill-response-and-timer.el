@@ -104,5 +104,17 @@ exit-recursive-edit and kill-buffer are stubbed."
           (should (= (point-min) (point-max))))
       (kill-buffer buf))))
 
+(ert-deftest test-response-get-buffer-create-with-active-input-method-propagates ()
+  "If an input method is active, it's activated in the new buffer."
+  (let ((activated-with nil))
+    (cl-letf (((symbol-function 'activate-input-method)
+               (lambda (im) (setq activated-with im)))
+              ((symbol-function 'set-input-method) #'ignore))
+      (let ((current-input-method 'pretend-im))
+        (let ((buf (org-drill-response-get-buffer-create)))
+          (unwind-protect
+              (should (eq 'pretend-im activated-with))
+            (kill-buffer buf)))))))
+
 (provide 'test-org-drill-response-and-timer)
 ;;; test-org-drill-response-and-timer.el ends here
