@@ -2727,6 +2727,48 @@ maximum number of items."
           nil
         m))))
 
+(defun org-drill--route-rating-result (session m result)
+  "Route RESULT (return value of `org-drill-entry') for marker M.
+Updates SESSION queues based on what the user did and returns one of:
+
+  `quit'  — user quit; caller should exit the loop (and stash :quit)
+  `edit'  — user wants to edit; caller should exit (and stash marker)
+  `skip'  — skip this item, continue the loop
+  `next'  — rating was recorded into again- or done-entries, continue"
+  (cond
+   ((null result)
+    (message "Quit")
+    (setf (oref session end-pos) :quit)
+    'quit)
+   ((eql result 'edit)
+    (setf (oref session end-pos) (point-marker))
+    'edit)
+   ((eql result 'skip)
+    (setf (oref session current-item) nil)
+    'skip)
+   (t
+    (cond
+     ((org-drill--quality-failed-p result)
+      (when (oref session again-entries)
+        (setf (oref session again-entries)
+              (org-drill-shuffle (oref session again-entries))))
+      (org-drill-push-end m (oref session again-entries)))
+     (t
+      (push m (oref session done-entries))))
+    (setf (oref session current-item) nil)
+    'next)))
+
+(defun org-drill--pick-next-marker (session resuming-p)
+  "Return the marker to drill next, and whether RESUMING-P stays true.
+Returns a cons (M . RESUMING-P').  M is nil if no marker is available."
+  (cond
+   ((or (not resuming-p)
+        (null (oref session current-item))
+        (not (org-drill-entry-p (oref session current-item))))
+    (cons (org-drill-pop-next-pending-entry session) resuming-p))
+   (t                                   ; resuming a suspended session
+    (cons (oref session current-item) nil))))
+
 (defun org-drill-entries (session &optional resuming-p)
   "Returns nil, t, or a list of markers representing entries that were
 \\='failed\\=' and need to be presented again before the session ends.
@@ -2734,14 +2776,9 @@ maximum number of items."
 RESUMING-P is true if we are resuming a suspended drill session."
   (cl-block org-drill-entries
     (while (org-drill-entries-pending-p session)
-      (let ((m (cond
-                ((or (not resuming-p)
-                     (null (oref session current-item))
-                     (not (org-drill-entry-p (oref session current-item))))
-                 (org-drill-pop-next-pending-entry session))
-                (t                      ; resuming a suspended session.
-                 (setq resuming-p nil)
-                 (oref session current-item)))))
+      (cl-destructuring-bind (m . next-resuming-p)
+          (org-drill--pick-next-marker session resuming-p)
+        (setq resuming-p next-resuming-p)
         (setf (oref session current-item) m)
         (unless m
           (error "Unexpectedly ran out of pending drill items"))
@@ -2751,36 +2788,14 @@ RESUMING-P is true if we are resuming a suspended drill session."
            ((not (org-at-heading-p))
             (error "Not at heading for entry %s" m))
            ((not (org-drill-entry-due-p session))
-            ;; The entry is not due anymore. This could arise if the user
-            ;; suspends a drill session, then drills an individual entry,
-            ;; then resumes the session.
             (message "Entry no longer due, skipping...")
-            (sit-for 0.3)
-            nil)
+            (sit-for 0.3))
            (t
             (org-fold-show-entry)
-            (let ((result (org-drill-entry session)))
-              (cond
-               ((null result)
-                (message "Quit")
-                (setf (oref session end-pos) :quit)
-                (cl-return-from org-drill-entries nil))
-               ((eql result 'edit)
-                (setf (oref session end-pos) (point-marker))
-                (cl-return-from org-drill-entries nil))
-               ((eql result 'skip)
-                (setf (oref session current-item) nil)
-                nil)                      ; skip this item
-               (t
-                (cond
-                 ((org-drill--quality-failed-p result)
-                  (if (oref session again-entries)
-                      (setf (oref session again-entries)
-                            (org-drill-shuffle (oref session again-entries))))
-                  (org-drill-push-end m (oref session again-entries)))
-                 (t
-                  (push m (oref session done-entries))))
-                (setf (oref session current-item) nil)))))))))))
+            (when (memq (org-drill--route-rating-result
+                         session m (org-drill-entry session))
+                        '(quit edit))
+              (cl-return-from org-drill-entries nil)))))))))
 
 (defun org-drill--quality-percent (q qualities)
   "Percentage of QUALITIES equal to Q, rounded to integer.
