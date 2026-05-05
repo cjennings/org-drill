@@ -120,6 +120,67 @@ goes to the in-buffer variant."
         (should-not mini-called)
         (should buffer-called)))))
 
+;;;; org-drill-presentation-prompt-in-buffer
+
+(defmacro with-mocked-in-buffer-deps (&rest body)
+  (declare (indent 0))
+  `(cl-letf (((symbol-function 'run-with-idle-timer)
+              (lambda (&rest _) 'fake-timer))
+             ((symbol-function 'cancel-timer) #'ignore)
+             ((symbol-function 'recursive-edit) #'ignore)
+             ((symbol-function 'select-window) #'ignore)
+             ((symbol-function 'display-buffer)
+              (lambda (buf &rest _)
+                (or (get-buffer-window buf)
+                    (selected-window))))
+             ((symbol-function 'org-drill--make-minibuffer-prompt)
+              (lambda (_s p) p)))
+     ,@body))
+
+(ert-deftest test-presentation-prompt-in-buffer-uses-default-prompt-when-nil ()
+  "When PROMPT is nil, `prompt-in-buffer' assembles a default prompt that
+mentions the response keys."
+  (let ((seen-prompt nil))
+    (with-mocked-in-buffer-deps
+      (cl-letf (((symbol-function 'org-drill--maybe-prepend-leech-warning)
+                 (lambda (p) (setq seen-prompt p) p)))
+        (with-fresh-drill-entry
+          (org-drill-presentation-prompt-in-buffer (org-drill-session)))))
+    (should (string-match-p "Type answer" seen-prompt))))
+
+(ert-deftest test-presentation-prompt-in-buffer-with-explicit-prompt ()
+  "When PROMPT is supplied, that string is the one fed to the leech-warning prepass."
+  (let ((seen-prompt nil))
+    (with-mocked-in-buffer-deps
+      (cl-letf (((symbol-function 'org-drill--maybe-prepend-leech-warning)
+                 (lambda (p) (setq seen-prompt p) p)))
+        (with-fresh-drill-entry
+          (org-drill-presentation-prompt-in-buffer (org-drill-session) "EXPLICIT-P"))))
+    (should (equal "EXPLICIT-P" seen-prompt))))
+
+(ert-deftest test-presentation-prompt-in-buffer-clears-drill-answer ()
+  "Calling the prompt resets the session's drill-answer slot."
+  (let ((session (org-drill-session)))
+    (oset session drill-answer "stale")
+    (with-mocked-in-buffer-deps
+      (cl-letf (((symbol-function 'org-drill--maybe-prepend-leech-warning)
+                 (lambda (p) p)))
+        (with-fresh-drill-entry
+          (org-drill-presentation-prompt-in-buffer session "p"))))
+    (should (null (oref session drill-answer)))))
+
+(ert-deftest test-presentation-prompt-in-buffer-returns-exit-kind ()
+  "The function returns the session's exit-kind set by recursive-edit."
+  (let ((session (org-drill-session)))
+    (with-mocked-in-buffer-deps
+      (cl-letf (((symbol-function 'recursive-edit)
+                 (lambda () (oset session exit-kind 'mock-result)))
+                ((symbol-function 'org-drill--maybe-prepend-leech-warning)
+                 (lambda (p) p)))
+        (with-fresh-drill-entry
+          (let ((result (org-drill-presentation-prompt-in-buffer session "p")))
+            (should (eq 'mock-result result))))))))
+
 (provide 'test-org-drill-presentation-prompt)
 
 ;;; test-org-drill-presentation-prompt.el ends here
