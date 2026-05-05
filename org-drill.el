@@ -571,6 +571,11 @@ This can make text more readable for long-form content."
 (defvar org-drill--saved-variable-pitch-mode nil
   "Saved variable-pitch-mode state before drill session started.")
 
+(defvar org-drill--saved-display-buffer nil
+  "Buffer in which the active drill session set up its display.
+Captured at setup so restore can target the same buffer even if the
+user has switched away by the time `org-drill--restore-display' runs.")
+
 (defvar org-drill-display-answer-hook nil
   "Hook called when `org-drill' answers are displayed.")
 
@@ -1973,41 +1978,56 @@ overlay covering whatever range point happened to be at."
 
 (defun org-drill--setup-display ()
   "Set up display settings for drill session.
-Saves current settings and applies drill-specific display preferences."
-  ;; Save current text scale and apply new size
+Saves current settings and applies drill-specific display preferences.
+Records the current buffer so that `org-drill--restore-display' can
+target it even if the user switches buffers mid-session."
+  (setq org-drill--saved-display-buffer (current-buffer))
+
+  ;; Save current text scale and apply new size (face is global).
   (when org-drill-text-size-during-session
     (setq org-drill--saved-text-scale
           (face-attribute 'default :height nil 'default))
     (set-face-attribute 'default nil :height (* org-drill-text-size-during-session 10)))
 
-  ;; Save and enable variable-pitch mode
+  ;; Save and enable variable-pitch mode (buffer-local minor mode).
   (when org-drill-use-variable-pitch
     (setq org-drill--saved-variable-pitch-mode
           (if (boundp 'variable-pitch-mode) variable-pitch-mode nil))
     (variable-pitch-mode 1))
 
-  ;; Save and hide modeline
+  ;; Save and hide modeline (buffer-local).
   (when org-drill-hide-modeline-during-session
     (setq org-drill--saved-modeline-format mode-line-format)
     (setq-local mode-line-format nil)))
 
 (defun org-drill--restore-display ()
-  "Restore display settings after drill session ends."
-  ;; Restore text size
-  (when org-drill--saved-text-scale
-    (set-face-attribute 'default nil :height org-drill--saved-text-scale)
-    (setq org-drill--saved-text-scale nil))
+  "Restore display settings after drill session ends.
+Buffer-local state (mode-line, variable-pitch-mode) is restored in
+the buffer the session originated from — not the current buffer at
+restore time, which may differ if the user switched away."
+  (let ((target (and (buffer-live-p org-drill--saved-display-buffer)
+                     org-drill--saved-display-buffer)))
+    ;; Restore text size (face is global — no buffer targeting needed).
+    (when org-drill--saved-text-scale
+      (set-face-attribute 'default nil :height org-drill--saved-text-scale)
+      (setq org-drill--saved-text-scale nil))
 
-  ;; Restore variable-pitch mode
-  (when (and org-drill-use-variable-pitch
-             (not (eq org-drill--saved-variable-pitch-mode 'unbound)))
-    (variable-pitch-mode (if org-drill--saved-variable-pitch-mode 1 -1))
-    (setq org-drill--saved-variable-pitch-mode nil))
+    ;; Restore variable-pitch-mode in the original buffer.
+    (when (and org-drill-use-variable-pitch
+               (not (eq org-drill--saved-variable-pitch-mode 'unbound)))
+      (when target
+        (with-current-buffer target
+          (variable-pitch-mode (if org-drill--saved-variable-pitch-mode 1 -1))))
+      (setq org-drill--saved-variable-pitch-mode nil))
 
-  ;; Restore modeline
-  (when org-drill--saved-modeline-format
-    (setq-local mode-line-format org-drill--saved-modeline-format)
-    (setq org-drill--saved-modeline-format nil)))
+    ;; Restore modeline in the original buffer.
+    (when org-drill--saved-modeline-format
+      (when target
+        (with-current-buffer target
+          (setq-local mode-line-format org-drill--saved-modeline-format)))
+      (setq org-drill--saved-modeline-format nil))
+
+    (setq org-drill--saved-display-buffer nil)))
 
 (defun org-drill-unhide-text ()
   "Unhide text."
