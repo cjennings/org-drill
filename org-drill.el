@@ -1482,13 +1482,20 @@ of QUALITY."
     (reverse intervals)))
 
 (defun org-drill--read-key-sequence (prompt)
-  "Just like `read-key-sequence' but with input method turned off."
+  "Just like `read-key-sequence' but with input method turned off.
+
+Uses `deactivate-input-method' / `activate-input-method' rather than
+`set-input-method', because `(set-input-method nil)' clears
+`default-input-method' as a side effect when no input method is
+currently active (upstream issues #52 and #58)."
   (let ((old-input-method current-input-method))
     (unwind-protect
         (progn
-          (set-input-method nil)
+          (when current-input-method
+            (deactivate-input-method))
           (read-key-sequence prompt))
-      (set-input-method old-input-method))))
+      (when old-input-method
+        (activate-input-method old-input-method)))))
 
 (defun org-drill-reschedule (session)
   "Returns quality rating (0-5), or nil if the user quit."
@@ -1810,14 +1817,19 @@ Consider reformulating the item to make it easier to remember.\n"
   (org-drill-response-complete))
 
 (defun org-drill-response-get-buffer-create ()
-  "Create a response buffer."
+  "Create a response buffer.
+
+Propagates the caller's input method into the new buffer, but only when
+one is actually active — otherwise `(set-input-method nil)' would clear
+`default-input-method' as a side effect (upstream issues #52, #58)."
   (let ((local-current-input-method
          current-input-method))
     (with-current-buffer
         (get-buffer-create "*Org-Drill*")
       (erase-buffer)
       (org-drill-response-mode)
-      (set-input-method local-current-input-method)
+      (when local-current-input-method
+        (activate-input-method local-current-input-method))
       (current-buffer))))
 
 (defun org-drill-presentation-prompt-in-buffer (session &optional prompt)
