@@ -245,17 +245,18 @@ The SM5 floor is shared with SM2 via `org-drill-modify-e-factor'.")
 ;;; Error Cases - cl-assert violations
 
 (defmacro test-scheduler--should-cl-assert (&rest body)
-  "Assert BODY signals a cl-assertion-failed via condition-case.
+  "Assert BODY signals a cl-assertion-failed.
 
-Mirrors the simple8 test file's helper.  See its commentary for why
-shadowing `signal-hook-function' is necessary on Emacs 29.4."
-  `(let ((caught
-          (let ((signal-hook-function nil))
+Mirrors the simple8 file's helper — see its commentary for the
+ERT-29 signal-hook quirk that forces a `skip-unless' on Emacs <30."
+  `(progn
+     (skip-unless (>= emacs-major-version 30))
+     (let ((caught
             (condition-case _err
                 (progn ,@body 'no-error)
-              (cl-assertion-failed 'caught)))))
-     (unless (eq caught 'caught)
-       (ert-fail "expected cl-assertion-failed signal, got none"))))
+              (cl-assertion-failed 'caught))))
+       (unless (eq caught 'caught)
+         (ert-fail "expected cl-assertion-failed signal, got none")))))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-negative-n ()
   "Error: n=-1 violates the (cl-assert (> n 0)) precondition."

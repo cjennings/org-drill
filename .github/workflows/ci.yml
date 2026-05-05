@@ -14,9 +14,13 @@ jobs:
       fail-fast: false
       matrix:
         emacs-version:
-          # Org 9.6 (our floor) ships built-in with Emacs 29; on Emacs
-          # 28 Cask pulls it from MELPA, so 28 still works as a target.
-          - '28.2'
+          # Emacs 29 is the practical floor: it ships Org 9.6 (our
+          # declared dep) built-in.  Earlier versions need Cask to
+          # pull a newer Org over the built-in, which has been
+          # unreliable in CI.  Tests pass locally on 30.x and on
+          # the snapshot runner; eight scheduler error-case tests
+          # are skipped on 29 due to an ERT signal-hook quirk
+          # (skip-unless guard inside the helper macro).
           - '29.4'
           - 'snapshot'
     steps:

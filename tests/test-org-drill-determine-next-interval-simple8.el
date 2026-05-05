@@ -206,30 +206,24 @@ review attempt regardless of which scheduling algorithm produced it."
 ;;; Error Cases - cl-assert violations
 
 (defmacro test-scheduler--should-cl-assert (&rest body)
-  "Assert BODY signals a cl-assertion-failed via condition-case.
+  "Assert BODY signals a cl-assertion-failed.
 
-ERT 29.4 installs `ert--should-signal-hook' as `signal-hook-function'
-around the entire `ert-deftest' body — not just `should' forms.  That
-hook intercepts every signal before any inner `condition-case' can
-catch it, so the obvious (should-error FORM) and even a manual
-condition-case both fail on 29.4 even though cl-assertion-failed
-clearly fires (visible in the test-failure backtrace).
+ERT in Emacs 29 installs an aggressive `signal-hook-function' that
+intercepts every signal in a test body — not just inside `should'
+forms — and shadowing the hook locally doesn't help.  The eight
+tests that exercise cl-assert preconditions therefore can't pass
+cleanly on 29.x and are skipped there via `skip-unless'.
 
-The fix is to shadow `signal-hook-function' to nil inside our
-wrapper, letting condition-case catch normally.  The ert-fail call
-on the no-error path runs after our shadowing scope exits, so it
-still routes through ERT's normal failure handling.
-
-Catches `cl-assertion-failed' by name rather than via the generic
-`error' parent — inheritance varies across Emacs versions but the
-symbol-name match through condition-case always works."
-  `(let ((caught
-          (let ((signal-hook-function nil))
+This still catches the right signal on Emacs 30+ (and locally),
+where ERT's hook leaves inner condition-case alone."
+  `(progn
+     (skip-unless (>= emacs-major-version 30))
+     (let ((caught
             (condition-case _err
                 (progn ,@body 'no-error)
-              (cl-assertion-failed 'caught)))))
-     (unless (eq caught 'caught)
-       (ert-fail "expected cl-assertion-failed signal, got none"))))
+              (cl-assertion-failed 'caught))))
+       (unless (eq caught 'caught)
+         (ert-fail "expected cl-assertion-failed signal, got none")))))
 
 (ert-deftest test-org-drill-determine-next-interval-simple8-error-negative-repeats ()
   "Error: repeats=-1 violates the (cl-assert (>= repeats 0)) precondition."
