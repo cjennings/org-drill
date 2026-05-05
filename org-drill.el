@@ -2157,11 +2157,17 @@ Note: does not actually alter the item."
 
 ;; This version is about 5x faster than the old version, above.
 (defun org-drill-entry-empty-p ()
-  "Return non-nil if the current entry is empty."
+  "Return non-nil if the current entry is empty.
+
+The search bound covers the whole subtree, so an entry whose answer
+lives inside a child sub-heading is correctly reported as non-empty
+\(upstream issue #13).  `org-end-of-subtree' is used in place of
+`outline-next-heading' because the latter lands on the first child
+heading, which truncates the search range before the child's body."
   (save-excursion
     (org-back-to-heading t)
     (let ((lim (save-excursion
-                 (outline-next-heading) (point))))
+                 (org-end-of-subtree t t) (point))))
       (if (fboundp 'org-end-of-meta-data-and-drawers)
           (org-end-of-meta-data-and-drawers) ; function removed Feb 2015
         (org-end-of-meta-data t))
