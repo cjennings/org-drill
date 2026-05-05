@@ -181,6 +181,24 @@ mentions the response keys."
           (let ((result (org-drill-presentation-prompt-in-buffer session "p")))
             (should (eq 'mock-result result))))))))
 
+;;;; org-drill-present-simple-card-with-typed-answer
+
+(ert-deftest test-present-simple-card-with-typed-answer-runs-prompt ()
+  "The typed-answer presenter calls `prompt-for-string' and returns its value."
+  (let ((called-with nil))
+    (cl-letf (((symbol-function 'org-drill-hide-all-subheadings-except) #'ignore)
+              ((symbol-function 'org-drill--show-latex-fragments) #'ignore)
+              ((symbol-function 'org-display-inline-images) #'ignore)
+              ((symbol-function 'org-drill-hide-drawers) #'ignore)
+              ((symbol-function 'org-drill-hide-subheadings-if) #'ignore)
+              ((symbol-function 'org-drill-presentation-prompt-for-string)
+               (lambda (s _p) (setq called-with s) 'prompt-result)))
+      (with-fresh-drill-entry
+        (let* ((session (org-drill-session))
+               (result (org-drill-present-simple-card-with-typed-answer session)))
+          (should (eq 'prompt-result result))
+          (should (eq session called-with)))))))
+
 (provide 'test-org-drill-presentation-prompt)
 
 ;;; test-org-drill-presentation-prompt.el ends here
