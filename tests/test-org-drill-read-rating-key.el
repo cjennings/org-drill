@@ -56,6 +56,15 @@ numeric input ends the loop."
   (with-keys-and-buffer (list (vector 'down) "5")
     (should (eql ?5 (org-drill--read-rating-key nil "help")))))
 
+(ert-deftest test-read-rating-key-handles-all-navigation-keys ()
+  "All six navigation keys (up/down/left/right/prior/next) are accepted
+without terminating the loop, then a numeric ends it."
+  (cl-letf (((symbol-function 'scroll-down) #'ignore)
+            ((symbol-function 'scroll-up) #'ignore))
+    (dolist (key '(up left right prior next))
+      (with-keys-and-buffer (list (vector key) "1")
+        (should (eql ?1 (org-drill--read-rating-key nil "help")))))))
+
 (ert-deftest test-read-rating-key-wheel-event-then-numeric ()
   "A wheel-event vector is dispatched without terminating; loop ends on
 the next numeric character."
