@@ -1591,6 +1591,22 @@ the current topic."
    (lambda () (let ((drill-heading (org-get-heading t)))
            (not (member drill-heading heading-list))))))
 
+(defun org-drill--maybe-prepend-leech-warning (prompt)
+  "Prepend the leech warning to PROMPT when applicable.
+The warning appears when `org-drill-leech-method' is `warn' and the
+entry at point is a leech.  Otherwise PROMPT is returned unchanged.
+
+Used by the three prompt builders (mini-buffer prompt, in-buffer
+prompt, prompt-for-string) to share the same preamble."
+  (if (and (eql 'warn org-drill-leech-method)
+           (org-drill-entry-leech-p))
+      (concat (propertize "!!! LEECH ITEM !!!
+You seem to be having a lot of trouble memorising this item.
+Consider reformulating the item to make it easier to remember.\n"
+                          'face '(:foreground "red"))
+              prompt)
+    prompt))
+
 (defun org-drill--make-minibuffer-prompt (session prompt)
   "Make a mini-buffer for the SESSION, with PROMPT."
   (let ((status (cl-first (org-drill-entry-status session)))
@@ -1677,14 +1693,7 @@ PROMPT: A string that overrides the standard prompt.
                       org-drill--quit-key)))
          (full-prompt
           (org-drill--make-minibuffer-prompt session prompt)))
-    (if (and (eql 'warn org-drill-leech-method)
-             (org-drill-entry-leech-p))
-        (setq full-prompt (concat
-                           (propertize "!!! LEECH ITEM !!!
-You seem to be having a lot of trouble memorising this item.
-Consider reformulating the item to make it easier to remember.\n"
-                                       'face '(:foreground "red"))
-                           full-prompt)))
+    (setq full-prompt (org-drill--maybe-prepend-leech-warning full-prompt))
     (while (memq ch '(nil org-drill--tags-key))
       (setq ch nil)
       (while (not (input-pending-p))
@@ -1799,14 +1808,7 @@ one is actually active — otherwise `(set-input-method nil)' would clear
          (full-prompt
           (org-drill--make-minibuffer-prompt session prompt)))
     (setf (oref session drill-answer) nil)
-    (if (and (eql 'warn org-drill-leech-method)
-             (org-drill-entry-leech-p))
-        (setq full-prompt (concat
-                           (propertize "!!! LEECH ITEM !!!
-You seem to be having a lot of trouble memorising this item.
-Consider reformulating the item to make it easier to remember.\n"
-                                       'face '(:foreground "red"))
-                           full-prompt)))
+    (setq full-prompt (org-drill--maybe-prepend-leech-warning full-prompt))
     (org-drill-presentation-timer-cancel)
     (setq org-drill-presentation-timer
           (run-with-idle-timer 1 t
@@ -1844,14 +1846,7 @@ START-TIME: The time the card started to be displayed.  This
               "Type your answer and press <Enter>: "))
          (full-prompt
           (org-drill--make-minibuffer-prompt session prompt)))
-    (if (and (eql 'warn org-drill-leech-method)
-             (org-drill-entry-leech-p))
-        (setq full-prompt (concat
-                           (propertize "!!! LEECH ITEM !!!
-You seem to be having a lot of trouble memorising this item.
-Consider reformulating the item to make it easier to remember.\n"
-                                       'face '(:foreground "red"))
-                           full-prompt)))
+    (setq full-prompt (org-drill--maybe-prepend-leech-warning full-prompt))
     (setf (oref session drill-answer)
           (read-string full-prompt nil nil nil t))))
 
