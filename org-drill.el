@@ -2869,9 +2869,14 @@ order to make items appear more frequently over time."
           (propertize "WARNING!" 'face 'org-warning)
           (- 100 pass-percent)
           (oref session overdue-entry-count)
+          ;; Guard the divisor — both counts are zero in degenerate
+          ;; scopes (e.g., cram mode with nothing collected, or a
+          ;; pure-failure session on empty queues), and the original
+          ;; `(/ ... 0)' raised arith-error before the warning could
+          ;; even render.
           (round (* 100 (oref session overdue-entry-count))
-                 (+ (oref session dormant-entry-count)
-                    (oref session due-entry-count))))
+                 (max 1 (+ (oref session dormant-entry-count)
+                           (oref session due-entry-count)))))
          ))))
 
 (defun org-drill-free-markers (session markers)
