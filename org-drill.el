@@ -3231,6 +3231,8 @@ unreviewed items. If there are no leftover items in memory, a full
 scan will be performed."
   (interactive)
   (let ((session org-drill-last-session))
+    (unless session
+      (user-error "No previous drill session to continue — run `org-drill' first"))
     (setf (oref session cram-mode) nil)
     (cond
      ((cl-plusp (org-drill-pending-entry-count session))
@@ -3249,6 +3251,8 @@ scan will be performed."
 exiting them with the `edit' or `quit' options."
   (interactive)
   (let ((session org-drill-last-session))
+    (unless session
+      (user-error "No suspended drill session to resume — run `org-drill' first"))
     (cond
      ((org-drill-entries-pending-p session)
       (org-drill nil nil t))
