@@ -244,23 +244,30 @@ The SM5 floor is shared with SM2 via `org-drill-modify-e-factor'.")
 
 ;;; Error Cases - cl-assert violations
 
+(defmacro test-scheduler--should-cl-assert (&rest body)
+  "Assert BODY signals a cl-assert violation, catching via condition-case.
+
+Mirrors the simple8 test file's helper.  See its commentary."
+  `(should
+    (eq 'caught
+        (condition-case nil
+            (progn ,@body 'no-error)
+          (error 'caught)))))
+
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-negative-n ()
   "Error: n=-1 violates the (cl-assert (> n 0)) precondition."
-  (should-error
-   (org-drill-determine-next-interval-sm5 0 -1 2.5 4 0 nil 0 nil nil)
-   :type 'cl-assertion-failed))
+  (test-scheduler--should-cl-assert
+   (org-drill-determine-next-interval-sm5 0 -1 2.5 4 0 nil 0 nil nil)))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-quality-below-zero ()
   "Error: quality=-1 violates the cl-assert quality range."
-  (should-error
-   (org-drill-determine-next-interval-sm5 0 1 2.5 -1 0 nil 0 nil nil)
-   :type 'cl-assertion-failed))
+  (test-scheduler--should-cl-assert
+   (org-drill-determine-next-interval-sm5 0 1 2.5 -1 0 nil 0 nil nil)))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-quality-above-five ()
   "Error: quality=6 violates the cl-assert quality range."
-  (should-error
-   (org-drill-determine-next-interval-sm5 0 1 2.5 6 0 nil 0 nil nil)
-   :type 'cl-assertion-failed))
+  (test-scheduler--should-cl-assert
+   (org-drill-determine-next-interval-sm5 0 1 2.5 6 0 nil 0 nil nil)))
 
 ;;; Algorithm Verification
 
