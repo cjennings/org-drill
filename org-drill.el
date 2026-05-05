@@ -1484,14 +1484,31 @@ currently active (upstream issues #52 and #58)."
       (when old-input-method
         (activate-input-method old-input-method)))))
 
-(defun org-drill-reschedule (session)
-  "Returns quality rating (0-5), or nil if the user quit."
+(defun org-drill--read-rating-key (typed-answer rating-help-block)
+  "Read a rating key (0-5) or control key for a drill prompt.
+
+Loops on `read-key-sequence' until the user presses 0..5, the
+configured quit key, the configured edit key, or C-g.  Arrow / scroll
+/ wheel events navigate the visible buffer.  The configured tags key
+runs `org-set-tags-command'.  The configured help key flips the
+prompt to include RATING-HELP-BLOCK above the standard prompt line.
+
+Returns the chosen character.
+
+TYPED-ANSWER, when non-nil, is rendered as a `Your answer: ...' line
+above the prompt — used by the typed-answer flow to show the user
+what they just typed.
+
+RATING-HELP-BLOCK is the multi-line ratings explanation shown on
+the help key.  It's a plain string (no trailing newline), with the
+caller supplying the wording appropriate to its scheduler (SM,
+Leitner, etc.).
+
+Shared by `org-drill-reschedule' and `org-drill-leitner-rebox'."
   (let ((ch nil)
         (input nil)
-        (next-review-dates (org-drill-hypothetical-next-review-dates))
-        (typed-answer-statement (if (oref session typed-answer)
-                                    (format "Your answer: %s\n"
-                                            (oref session typed-answer))
+        (typed-answer-statement (if typed-answer
+                                    (format "Your answer: %s\n" typed-answer)
                                   ""))
         (key-prompt (format "(0-5, %c=help, %c=edit, %c=tags, %c=quit)"
                             org-drill--help-key
@@ -1506,20 +1523,8 @@ currently active (upstream issues #52 and #58)."
         (run-hooks 'org-drill-display-answer-hook)
         (setq input (org-drill--read-key-sequence
                      (if (eq ch org-drill--help-key)
-                         (format "0-2 Means you have forgotten the item.
-3-5 Means you have remembered the item.
-
-0 - Completely forgot.
-1 - Even after seeing the answer, it still took a bit to sink in.
-2 - After seeing the answer, you remembered it.
-3 - It took you awhile, but you finally remembered. (+%s days)
-4 - After a little bit of thought you remembered. (+%s days)
-5 - You remembered the item really easily. (+%s days)
-
-%sHow well did you do? %s"
-                                 (round (nth 3 next-review-dates))
-                                 (round (nth 4 next-review-dates))
-                                 (round (nth 5 next-review-dates))
+                         (format "%s\n\n%sHow well did you do? %s"
+                                 rating-help-block
                                  typed-answer-statement
                                  key-prompt)
                        (format "%sHow well did you do? %s"
@@ -1542,6 +1547,25 @@ currently active (upstream issues #52 and #58)."
             (wheel-down (ignore-errors (mwheel-scroll (elt input 0)))))))
         (if (eql ch org-drill--tags-key)
             (org-set-tags-command))))
+    ch))
+
+(defun org-drill-reschedule (session)
+  "Returns quality rating (0-5), or nil if the user quit."
+  (let* ((next-review-dates (org-drill-hypothetical-next-review-dates))
+         (rating-help (format "0-2 Means you have forgotten the item.
+3-5 Means you have remembered the item.
+
+0 - Completely forgot.
+1 - Even after seeing the answer, it still took a bit to sink in.
+2 - After seeing the answer, you remembered it.
+3 - It took you awhile, but you finally remembered. (+%s days)
+4 - After a little bit of thought you remembered. (+%s days)
+5 - You remembered the item really easily. (+%s days)"
+                              (round (nth 3 next-review-dates))
+                              (round (nth 4 next-review-dates))
+                              (round (nth 5 next-review-dates))))
+         (ch (org-drill--read-rating-key (oref session typed-answer)
+                                         rating-help)))
     (cond
      ((and (>= ch ?0) (<= ch ?5))
       (let ((quality (- ch ?0))
@@ -3872,26 +3896,9 @@ shuffling is done in place."
 
 (defun org-drill-leitner-rebox (session)
   "Returns quality rating (0-5), or nil if the user quit."
-  (let ((ch nil)
-        (input nil)
-        (typed-answer-statement (if (oref session typed-answer)
-                                    (format "Your answer: %s\n"
-                                            (oref session typed-answer))
-                                  ""))
-        (key-prompt (format "(0-5, %c=help, %c=edit, %c=tags, %c=quit)"
-                            org-drill--help-key
-                            org-drill--edit-key
-                            org-drill--tags-key
-                            org-drill--quit-key)))
-    (save-excursion
-      (while (not (memq ch (list org-drill--quit-key
-                                 org-drill--edit-key
-                                 7          ; C-g
-                                 ?0 ?1 ?2 ?3 ?4 ?5)))
-        (run-hooks 'org-drill-display-answer-hook)
-        (setq input (org-drill--read-key-sequence
-                     (if (eq ch org-drill--help-key)
-                         (format "0-2 Means you have forgotten the item.
+  (let ((ch (org-drill--read-rating-key
+             (oref session typed-answer)
+             "0-2 Means you have forgotten the item.
 3-5 Means you have remembered the item.
 
 0 - Completely forgot. (Back to Zero)
@@ -3899,32 +3906,7 @@ shuffling is done in place."
 2 - After seeing the answer, you remembered it (Remain in current Box)
 3 - It took you awhile, but you finally remembered. (Forward One)
 4 - After a little bit of thought you remembered. (Forward One)
-5 - You remembered the item really easily. (Forward One)
-
-%sHow well did you do? %s"
-                                 typed-answer-statement
-                                 key-prompt)
-                       (format "%sHow well did you do? %s"
-                               typed-answer-statement key-prompt))))
-        ;; All this is shared with drill-reschedule. And what does it do?
-        (cond
-         ((stringp input)
-          (setq ch (elt input 0)))
-         ((and (vectorp input) (symbolp (elt input 0)))
-          (cl-case (elt input 0)
-            (up (ignore-errors (forward-line -1)))
-            (down (ignore-errors (forward-line 1)))
-            (left (ignore-errors (backward-char)))
-            (right (ignore-errors (forward-char)))
-            (prior (ignore-errors (scroll-down))) ; pgup
-            (next (ignore-errors (scroll-up)))))  ; pgdn
-         ((and (vectorp input) (listp (elt input 0))
-               (eventp (elt input 0)))
-          (cl-case (car (elt input 0))
-            (wheel-up (ignore-errors (mwheel-scroll (elt input 0))))
-            (wheel-down (ignore-errors (mwheel-scroll (elt input 0)))))))
-        (if (eql ch org-drill--tags-key)
-            (org-set-tags-command))))
+5 - You remembered the item really easily. (Forward One)")))
     (cond
      ((and (>= ch ?0) (<= ch ?5))
       (let ((current-box
