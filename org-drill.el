@@ -2954,6 +2954,39 @@ that many days)."
          (string-to-number (or (org-entry-get (point) "DRILL_LAST_INTERVAL") "0"))))
      (t nil))))
 
+(defun org-drill--entry-empty-and-not-empty-friendly-p ()
+  "Non-nil when the entry has an empty body AND its card type doesn't
+treat empty bodies as meaningful.
+
+A card type that wants empty bodies is one whose entry in
+`org-drill-card-type-alist' has a non-nil third element (the
+DRILL-EMPTY-P slot)."
+  (and (org-drill-entry-empty-p)
+       (let* ((card-type (org-entry-get (point) "DRILL_CARD_TYPE" nil))
+              (dat (cdr (assoc card-type org-drill-card-type-alist))))
+         (or (null card-type)
+             (not (cl-third dat))))))
+
+(defun org-drill--classify-status (session due last-int)
+  "Return the status keyword for the entry at point.
+SESSION is needed for cram-mode and overdue-factor.  DUE is the
+days-overdue value already computed by `entry-days-overdue', and
+LAST-INT is the entry's last interval (defaulted to 1)."
+  (cond
+   ((not (org-drill-entry-p)) nil)
+   ((org-drill--entry-empty-and-not-empty-friendly-p) nil)
+   ((null due) :unscheduled)            ; usually a skipped leech
+   ((cl-minusp due) :future)
+   ;; Mature entries that were failed last time are :failed regardless
+   ;; of how young, old, or overdue they are.  The 9999 default keeps
+   ;; never-rated cards out of the failure bucket.
+   ((org-drill--quality-failed-p (org-drill-entry-last-quality 9999)) :failed)
+   ((org-drill-entry-new-p) :new)
+   ;; Overdue overrides the young/old distinction.
+   ((org-drill-entry-overdue-p session due last-int) :overdue)
+   ((<= (org-drill-entry-last-interval 9999) org-drill-days-before-old) :young)
+   (t :old)))
+
 (defun org-drill-entry-status (session)
   "Returns a list (STATUS DUE AGE) where DUE is the number of days overdue,
 zero being due today, -1 being scheduled 1 day in the future.
@@ -2974,44 +3007,7 @@ STATUS is one of the following values:
     (let ((due (org-drill-entry-days-overdue session))
           (age (org-drill-entry-days-since-creation session t))
           (last-int (org-drill-entry-last-interval 1)))
-      (list
-       (cond
-        ((not (org-drill-entry-p))
-         nil)
-        ((and (org-drill-entry-empty-p)
-              (let* ((card-type (org-entry-get (point) "DRILL_CARD_TYPE" nil))
-                    (dat (cdr (assoc card-type org-drill-card-type-alist))))
-                (or (null card-type)
-                    (not (cl-third dat)))))
-         ;; body is empty, and this is not a card type where empty bodies are
-         ;; meaningful, so skip it.
-         nil)
-        ((null due)                     ; unscheduled - usually a skipped leech
-         :unscheduled)
-        ;; ((eql -1 due)
-        ;;  :tomorrow)
-        ((cl-minusp due)                   ; scheduled in the future
-         :future)
-        ;; The rest of the stati all denote 'due' items ==========================
-        ((<= (org-drill-entry-last-quality 9999)
-             org-drill-failure-quality)
-         ;; Mature entries that were failed last time are
-         ;; FAILED, regardless of how young, old or overdue
-         ;; they are.
-         :failed)
-        ((org-drill-entry-new-p)
-         :new)
-        ((org-drill-entry-overdue-p session due last-int)
-         ;; Overdue status overrides young versus old
-         ;; distinction.
-         ;; Store marker + due, for sorting of overdue entries
-         :overdue)
-        ((<= (org-drill-entry-last-interval 9999)
-             org-drill-days-before-old)
-         :young)
-        (t
-         :old))
-       due age))))
+      (list (org-drill--classify-status session due last-int) due age))))
 
 (defun org-drill-progress-message (collected scanned)
   (when (zerop (% scanned 50))
