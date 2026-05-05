@@ -247,17 +247,20 @@ The SM5 floor is shared with SM2 via `org-drill-modify-e-factor'.")
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-negative-n ()
   "Error: n=-1 violates the (cl-assert (> n 0)) precondition."
   (should-error
-   (org-drill-determine-next-interval-sm5 0 -1 2.5 4 0 nil 0 nil nil)))
+   (org-drill-determine-next-interval-sm5 0 -1 2.5 4 0 nil 0 nil nil)
+   :type 'cl-assertion-failed))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-quality-below-zero ()
   "Error: quality=-1 violates the cl-assert quality range."
   (should-error
-   (org-drill-determine-next-interval-sm5 0 1 2.5 -1 0 nil 0 nil nil)))
+   (org-drill-determine-next-interval-sm5 0 1 2.5 -1 0 nil 0 nil nil)
+   :type 'cl-assertion-failed))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-quality-above-five ()
   "Error: quality=6 violates the cl-assert quality range."
   (should-error
-   (org-drill-determine-next-interval-sm5 0 1 2.5 6 0 nil 0 nil nil)))
+   (org-drill-determine-next-interval-sm5 0 1 2.5 6 0 nil 0 nil nil)
+   :type 'cl-assertion-failed))
 
 ;;; Algorithm Verification
 
