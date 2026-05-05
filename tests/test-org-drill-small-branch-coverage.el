@@ -75,5 +75,24 @@ read and re-activates it on the way out."
               ((symbol-function 'org-drill-entry-p) (lambda (&rest _) nil)))
       (should-error (org-drill-goto-drill-entry-heading)))))
 
+;;;; org-drill-add-cloze-fontification
+
+(ert-deftest test-add-cloze-fontification-with-flag-extends-keywords ()
+  "When `org-drill-use-visible-cloze-face-p' is t, the cloze keyword spec is
+added to `org-font-lock-extra-keywords'."
+  (with-temp-buffer
+    (let ((org-drill-use-visible-cloze-face-p t)
+          (org-font-lock-extra-keywords nil))
+      (org-drill-add-cloze-fontification)
+      (should org-font-lock-extra-keywords))))
+
+(ert-deftest test-add-cloze-fontification-without-flag-leaves-keywords-untouched ()
+  "When the flag is nil, no entry is added to `org-font-lock-extra-keywords'."
+  (with-temp-buffer
+    (let ((org-drill-use-visible-cloze-face-p nil)
+          (org-font-lock-extra-keywords nil))
+      (org-drill-add-cloze-fontification)
+      (should (null org-font-lock-extra-keywords)))))
+
 (provide 'test-org-drill-small-branch-coverage)
 ;;; test-org-drill-small-branch-coverage.el ends here
