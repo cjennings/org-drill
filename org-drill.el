@@ -3076,6 +3076,76 @@ STATUS is one of the following values:
   (org-id-get-create))
 
 ;;;###autoload
+(defun org-drill--prepare-fresh-session (session cram)
+  "Reset SESSION's queues and counters for a fresh (non-resume) run.
+CRAM, if non-nil, starts the session in cram mode."
+  (org-drill-free-markers session t)
+  (setf (oref session cram-mode) cram
+        (oref session current-item) nil
+        (oref session done-entries) nil
+        (oref session dormant-entry-count) 0
+        (oref session due-entry-count) 0
+        (oref session due-tomorrow-count) 0
+        (oref session overdue-entry-count) 0
+        (oref session new-entries) nil
+        (oref session overdue-entries) nil
+        (oref session young-mature-entries) nil
+        (oref session old-mature-entries) nil
+        (oref session failed-entries) nil
+        (oref session again-entries) nil
+        (oref session start-time) (float-time (current-time))))
+
+(defun org-drill--collect-entries (session scope drill-match)
+  "Scan buffers in SCOPE for drill entries matching DRILL-MATCH.
+Populates SESSION's queues via `org-drill-map-entry-function', then
+sorts the overdue queue."
+  (let ((org-trust-scanner-tags t))
+    (org-drill-map-entries
+     (apply-partially #'org-drill-map-entry-function session)
+     scope drill-match)
+    (org-drill-order-overdue-entries session)
+    (setf (oref session overdue-entry-count)
+          (length (oref session overdue-entries)))))
+
+(defun org-drill--queues-empty-p (session)
+  "Non-nil when SESSION has no current-item and every drill queue is empty."
+  (and (null (oref session current-item))
+       (null (oref session new-entries))
+       (null (oref session failed-entries))
+       (null (oref session overdue-entries))
+       (null (oref session young-mature-entries))
+       (null (oref session old-mature-entries))))
+
+(defun org-drill--show-resume-hint ()
+  "Show the post-suspend `you can resume...' message."
+  (let ((keystr (org-drill-command-keybinding-to-string 'org-drill-resume)))
+    (message
+     "You can continue the drill session with the command `org-drill-resume'.%s"
+     (if keystr (format "\nYou can run this command by pressing %s." keystr)
+       ""))))
+
+(defun org-drill--show-end-message (session)
+  "Display the appropriate end-of-session message and side-effects.
+If SESSION was suspended (end-pos is set), shows the resume hint.
+Otherwise runs `org-drill-final-report', persists the SM5 matrix,
+and optionally saves buffers."
+  (cond
+   ((oref session end-pos)
+    (when (markerp (oref session end-pos))
+      (org-drill-goto-entry (oref session end-pos))
+      (org-reveal)
+      (org-fold-show-entry))
+    (org-drill--show-resume-hint))
+   (t
+    (org-drill-final-report session)
+    (when (eql 'sm5 org-drill-spaced-repetition-algorithm)
+      (persist-save 'org-drill-sm5-optimal-factor-matrix))
+    (when org-drill-save-buffers-after-drill-sessions-p
+      (save-some-buffers))
+    (message "Drill session finished!")
+    (sit-for 1)
+    (message nil))))
+
 (defun org-drill (&optional scope drill-match resume-p cram)
   "Begin an interactive \\='drill session\\='. The user is asked to
 review a series of topics (headers). Each topic is initially
@@ -3113,106 +3183,40 @@ than starting a new one.
 
 CRAM, if non-nil, will start a new session in cram mode. If
 resuming a suspended session, this parameter is ignored."
-
   (interactive)
-  ;; Check org version. Org 7.9.3f introduced a backwards-incompatible change
-  ;; to the arguments accepted by `org-schedule'. At the time of writing there
-  ;; are still lots of people using versions of org older than this.
-  (let ((majorv (cl-first (mapcar 'string-to-number (split-string (org-release) "[.]")))))
-    (if (and (< majorv 8)
-             (not (string-match-p "universal prefix argument" (documentation 'org-schedule))))
-        (read-char-exclusive
-         (format "Warning: org-drill requires org mode 7.9.3f or newer. Scheduling of failed cards will not
-work correctly with older versions of org mode. Your org mode version (%s) appears to be older than
-7.9.3f. Please consider installing a more recent version of org mode." (org-release)))))
-  (let ((session
-         (if resume-p
-             org-drill-last-session
-           (setq org-drill-last-session
-                 (org-drill-session)))))
-    (cl-block org-drill
-      ;; Clear stale `end-pos' on resume.  The slot was set when the
-      ;; user interrupted the previous session (edit / quit), and
-      ;; carrying it over makes the post-resume `(if (oref session
-      ;; end-pos) ...)' branch fire — silently skipping
-      ;; `org-drill-final-report' (upstream issue #33).
-      (when resume-p
-        (setf (oref session end-pos) nil))
-      (unless resume-p
-        (org-drill-free-markers session t)
-        (setf (oref session cram-mode) cram
-              (oref session current-item) nil
-              (oref session done-entries) nil
-              (oref session dormant-entry-count) 0
-              (oref session due-entry-count) 0
-              (oref session due-tomorrow-count) 0
-              (oref session overdue-entry-count) 0
-              (oref session new-entries) nil
-              (oref session overdue-entries) nil
-              (oref session young-mature-entries) nil
-              (oref session old-mature-entries) nil
-              (oref session failed-entries) nil
-              (oref session again-entries) nil
-              (oref session start-time) (float-time (current-time))))
-      (unwind-protect
-          (save-excursion
-            (unless resume-p
-              (let ((org-trust-scanner-tags t))
-                (org-drill-map-entries
-                 (apply-partially #'org-drill-map-entry-function session)
-                 scope drill-match)
-                (org-drill-order-overdue-entries session)
-                (setf (oref session overdue-entry-count)
-                      (length (oref session overdue-entries)))))
-            (setf (oref session due-entry-count)
-                  (org-drill-pending-entry-count session))
-            ;; Set up display and run before-session hook
-            (unless resume-p
-              (org-drill--setup-display)
-              (run-hooks 'org-drill-before-session-hook))
-            (cond
-             ((and (null (oref session current-item))
-                   (null (oref session new-entries))
-                   (null (oref session failed-entries))
-                   (null (oref session overdue-entries))
-                   (null (oref session young-mature-entries))
-                   (null (oref session old-mature-entries)))
-              (message "I did not find any pending drill items."))
-             (t
-              (org-drill-entries session resume-p)
-              (message "Drill session finished!")
-              (sit-for 1)
-              (message nil)
-              )))
-        (progn
-          ;; Cleanup: restore display and run after-session hook
-          (org-drill--restore-display)
-          (run-hooks 'org-drill-after-session-hook)
-          ;; Always free done-entries markers, even on error or suspension
-          (org-drill-free-markers session (oref session done-entries))
-          (unless (oref session end-pos)
-            (setf (oref session cram-mode) nil)))))
-    (cond
-     ((oref session end-pos)
-      (when (markerp (oref session end-pos))
-        (org-drill-goto-entry (oref session end-pos))
-        (org-reveal)
-        (org-fold-show-entry))
-      (let ((keystr (org-drill-command-keybinding-to-string 'org-drill-resume)))
-        (message
-         "You can continue the drill session with the command `org-drill-resume'.%s"
-         (if keystr (format "\nYou can run this command by pressing %s." keystr)
-           ""))))
-     (t
-      (org-drill-final-report session)
-      (if (eql 'sm5 org-drill-spaced-repetition-algorithm)
-          (persist-save 'org-drill-sm5-optimal-factor-matrix))
-      (if org-drill-save-buffers-after-drill-sessions-p
-          (save-some-buffers))
-      (message "Drill session finished!")
-      (sit-for 1)
-      (message nil)
-      ))))
+  (let ((session (if resume-p
+                     org-drill-last-session
+                   (setq org-drill-last-session (org-drill-session)))))
+    ;; Clear stale `end-pos' on resume — see upstream issue #33.
+    (when resume-p
+      (setf (oref session end-pos) nil))
+    (unless resume-p
+      (org-drill--prepare-fresh-session session cram))
+    (unwind-protect
+        (save-excursion
+          (unless resume-p
+            (org-drill--collect-entries session scope drill-match))
+          (setf (oref session due-entry-count)
+                (org-drill-pending-entry-count session))
+          (unless resume-p
+            (org-drill--setup-display)
+            (run-hooks 'org-drill-before-session-hook))
+          (cond
+           ((org-drill--queues-empty-p session)
+            (message "I did not find any pending drill items."))
+           (t
+            (org-drill-entries session resume-p)
+            (message "Drill session finished!")
+            (sit-for 1)
+            (message nil))))
+      ;; Cleanup runs whether the body succeeded, errored, or was
+      ;; suspended via cl-return-from in `org-drill-entries'.
+      (org-drill--restore-display)
+      (run-hooks 'org-drill-after-session-hook)
+      (org-drill-free-markers session (oref session done-entries))
+      (unless (oref session end-pos)
+        (setf (oref session cram-mode) nil)))
+    (org-drill--show-end-message session)))
 
 ;;;###autoload
 (defun org-drill-cram (&optional scope drill-match)
