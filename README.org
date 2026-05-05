@@ -1,0 +1,227 @@
+* Org-Drill — Spaced-Repetition Flashcards for Org Mode
+
+[[#maintenance][Maintenance Status]] | [[#features][Features]] | [[#installation][Installation]] | [[#quick-start][Quick Start]] | [[#in-session-keys][In-Session Keys]] | [[#configuration][Configuration]] | [[#development][Development]] | [[#history][History]] | [[#license][License]]
+
+[[https://www.gnu.org/software/emacs/][file:assets/made-for-emacs-badge.svg]]
+[[https://melpa.org/#/org-drill][file:https://melpa.org/packages/org-drill-badge.svg]]
+[[https://stable.melpa.org/#/org-drill][file:https://stable.melpa.org/packages/org-drill-badge.svg]]
+[[https://github.com/cjennings/org-drill/actions/workflows/ci.yml][file:https://github.com/cjennings/org-drill/actions/workflows/ci.yml/badge.svg]]
+[[https://coveralls.io/github/cjennings/org-drill?branch=main][file:https://coveralls.io/repos/github/cjennings/org-drill/badge.svg?branch=main]]
+
+Org-Drill turns Org Mode headings into flashcards and drills you on them using a spaced-repetition algorithm.  You write your cards as plain Org headings, tag them =:drill:=, and =M-x org-drill= walks you through the ones that are due.  Ratings (0–5) feed a scheduling algorithm (SM2, SM5, or Simple8) that spaces out future reviews.
+
+" /Memory is the residue of thought./ "
+— /Daniel Willingham/
+
+** Maintenance Status
+:PROPERTIES:
+:CUSTOM_ID: maintenance
+:END:
+
+This is a maintained fork of [[https://gitlab.com/phillord/org-drill][phillord/org-drill]].  The upstream looks abandoned (no commits in a long while, open issues sitting), so I've taken on keeping the project alive — fixing bugs, raising test coverage, modernizing.  Recent work includes:
+
+- Fix for the =[Y-08-27 Wed 16:%]= timestamp shape (upstream issue #59)
+- Fix for =default-input-method= getting clobbered every drill session (upstream issues #52, #58)
+- Fix for entries whose answer lives in a child sub-heading being silently skipped (upstream issue #13)
+- Fix for cloze face leaking onto org headings (upstream issue #38)
+- Fix for "Window system frame should be used" error on TTY emacsclient (upstream issue #44)
+- Several other smaller fixes — see =git log=
+
+If you've been hitting any of those, this fork should help.
+
+*Where to get it:*
+- Primary: [[https://github.com/cjennings/org-drill][github.com/cjennings/org-drill]]
+- Issues / questions: [[https://github.com/cjennings/org-drill/issues][GitHub Issues]]
+
+** Features
+:PROPERTIES:
+:CUSTOM_ID: features
+:END:
+
+- Cards live as Org headings — no separate database, no sync hassle, your decks are just =.org= files
+- Multiple card types: simple front/back, two-sided, multi-cloze, hide-N-of-N, language-specific (verb conjugation, noun declension), and user-defined
+- Three spaced-repetition algorithms: =SM2=, =SM5= (default), =Simple8=
+- Cram mode for review sprints — drill everything, ignore schedule
+- Leitner box system as an alternative to the SM* family
+- Cloze deletion with optional hints (=[hidden||hint]=)
+- Multi-file decks via Org's agenda-files mechanism, or per-directory scope
+- Session controls: maximum duration, maximum items per session, leech detection
+- LaTeX preview, inline images, and the rest of the Org rendering machinery just work inside drill sessions
+
+** Installation
+:PROPERTIES:
+:CUSTOM_ID: installation
+:END:
+
+Requires Emacs 25.3+ and Org 9.6+.  Pick whichever package manager you already use.
+
+*** MELPA + use-package
+Org-drill is on [[https://melpa.org/][MELPA]] and [[https://stable.melpa.org/#/][MELPA Stable]].  Add the following to your init file:
+
+#+begin_src emacs-lisp
+  (use-package org-drill
+    :ensure t
+    :commands (org-drill org-drill-cram org-drill-resume)
+    :bind ("C-c d" . org-drill))
+#+end_src
+
+*** package-vc-install (Emacs 29+)
+Pull straight from this fork's =main= branch:
+
+#+begin_src emacs-lisp
+  (unless (package-installed-p 'org-drill)
+    (package-vc-install "https://github.com/cjennings/org-drill"))
+#+end_src
+
+*** use-package with =:vc= (Emacs 29+)
+
+#+begin_src emacs-lisp
+  (use-package org-drill
+    :vc (:url "https://github.com/cjennings/org-drill" :rev :newest)
+    :bind ("C-c d" . org-drill))
+#+end_src
+
+*** Straight
+
+#+begin_src emacs-lisp
+  (straight-use-package
+   '(org-drill :type git :host github :repo "cjennings/org-drill"))
+#+end_src
+
+*** Manual
+Clone the repo and add it to your =load-path=:
+
+#+begin_src emacs-lisp
+  (add-to-list 'load-path "/path/to/org-drill")
+  (require 'org-drill)
+#+end_src
+
+** Quick Start
+:PROPERTIES:
+:CUSTOM_ID: quick-start
+:END:
+
+Sixty seconds from install to first drill:
+
+1. Open a new file =my-deck.org=.
+2. Paste the following and save:
+
+   #+begin_example
+   ,* What's the capital of France? :drill:
+   Paris
+   ,* What's 2 + 2? :drill:
+   4
+   ,* What's `M-x` in Emacs?               :drill:
+   :PROPERTIES:
+   :DRILL_CARD_TYPE: hide1cloze
+   :END:
+   The keystroke that runs [Execute extended command].
+   #+end_example
+
+3. =M-x org-drill=.
+
+Org-drill will show you each card, wait for you to think of the answer, and let you reveal it with any key.  Rate yourself 0 (forgot) to 5 (perfect) — that rating sets when you'll see the card again.
+
+The bundled =org-drill.org= file in this repo is also a working drill deck — open it in Emacs and =M-x org-drill= to see every card type in action.  =spanish.org= is another worked example, oriented at language learning.
+
+** In-Session Keys
+:PROPERTIES:
+:CUSTOM_ID: in-session-keys
+:END:
+
+While a card is shown:
+
+| Key       | Action                                |
+|-----------+---------------------------------------|
+| =any key= | Reveal the answer                     |
+| =q=       | Quit the session                      |
+| =e=       | Edit the current card                 |
+| =s=       | Skip the current card                 |
+| =t=       | Add or remove tags on the current card |
+| =?=       | Show help (rating scale + scheduler hint) |
+
+After the answer is revealed:
+
+| Key   | Meaning                                                       |
+|-------+---------------------------------------------------------------|
+| =0=   | Completely forgot — reset interval, mark as failed            |
+| =1=   | Even after seeing it, took a moment — fail                    |
+| =2=   | After seeing it, remembered — fail (last fail-bucket rating)  |
+| =3=   | Took a while, but recalled — pass                             |
+| =4=   | Recalled with a little thought — pass                         |
+| =5=   | Recalled easily — pass                                        |
+
+Anything 3 or higher pushes the card forward in the schedule; 0–2 sends it back.  Arrow keys, =Page Up=, =Page Down=, and the mouse wheel scroll the visible card during the prompt.
+
+After a quit (=q=) or edit (=e=), resume with =M-x org-drill-resume=.  Cram everything in your deck regardless of schedule with =M-x org-drill-cram=.
+
+** Configuration
+:PROPERTIES:
+:CUSTOM_ID: configuration
+:END:
+
+The most-used customization options:
+
+#+begin_src emacs-lisp
+  (use-package org-drill
+    :ensure t
+    :custom
+    ;; Default scope for `M-x org-drill'.  Other choices:
+    ;;   'tree (subtree at point), 'directory, 'agenda, a list of file paths.
+    (org-drill-scope 'file)
+    ;; How long a session may run before org-drill stops queuing new items.
+    (org-drill-maximum-duration 20)             ; minutes; nil for no limit
+    ;; How many items per session.  nil for everything pending.
+    (org-drill-maximum-items-per-session 30)
+    ;; Spaced-repetition algorithm.  Choices: 'sm2, 'sm5, 'simple8.
+    (org-drill-spaced-repetition-algorithm 'sm5)
+    ;; What to do with leech items (cards you keep forgetting).
+    ;; Choices: 'warn (show a banner), 'skip (don't drill), nil.
+    (org-drill-leech-method 'warn)
+    ;; Increase the text size during drill sessions.  nil leaves it alone.
+    (org-drill-text-size-during-session 1.5))
+#+end_src
+
+The full list of defcustoms is documented inside the source — =M-x customize-group RET org-drill RET= shows them all.
+
+** Development
+:PROPERTIES:
+:CUSTOM_ID: development
+:END:
+
+The repo includes a Makefile that wraps Cask-driven test and lint flows:
+
+| Target               | What it does                                                       |
+|----------------------+--------------------------------------------------------------------|
+| =make help=          | List all targets                                                   |
+| =make setup=         | Install development dependencies via Cask                          |
+| =make test=          | Run the full test suite (ERT unit + robot)                         |
+| =make test-unit=     | ERT unit tests only                                                |
+| =make test-file FILE=…= | Run one test file                                                |
+| =make coverage=      | Generate =.coverage/simplecov.json= via undercover                |
+| =make compile=       | Byte-compile =org-drill.el=                                        |
+| =make lint=          | Run =checkdoc= + =package-lint= + =elisp-lint= (informational)     |
+| =make validate-parens= | Quick structural check                                           |
+| =make robot=         | Window-system end-to-end tests under =robot/=                      |
+
+Tests live under =tests/= as ERT files.  Coverage hovers around 78% on =org-drill.el= and is tracked with the =:slow= ERT tag for any genuinely-long-running tests.
+
+Issues and pull requests welcome on [[https://github.com/cjennings/org-drill][GitHub]].
+
+** History
+:PROPERTIES:
+:CUSTOM_ID: history
+:END:
+
+Org-drill started life as a contrib in Org Mode itself (when the Org repo had a =contrib/lisp/= directory), authored by [[https://github.com/eeeickythump][Paul Sexton]].  It later moved to its own [[https://gitlab.com/phillord/org-drill][GitLab repo under Phil Lord]] when Org dropped contrib.  Phil's repo carried the project through several years of fixes and feature additions.
+
+This fork picks up where Phil's repo paused.  I emailed phillord asking how I could help; if I don't hear back I plan to ask to take over upstream maintenance.  Meanwhile bugs are getting fixed here and tests are filling in.
+
+For the deep manual — every card type, every customization, plus a working deck you can drill against to see each card-type in action — open =org-drill.org= in Emacs.
+
+** License
+:PROPERTIES:
+:CUSTOM_ID: license
+:END:
+
+GPL-3.0-or-later.  See the header of =org-drill.el= for the full notice.
