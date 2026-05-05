@@ -731,29 +731,6 @@ regardless of whether the test was successful.")
 (put 'org-drill-left-cloze-delimiter 'safe-local-variable 'stringp)
 (put 'org-drill-right-cloze-delimiter 'safe-local-variable 'stringp)
 
-;;; Org compatability hacks
-(when (version< org-version "9.2")
-  (advice-add 'org-get-tags :around #'org-drill-get-tags-advice))
-
-(defun org-drill-get-tags-advice (orig-fun &rest args)
-  ;; the two arg call obsoletes get-local-tags
-  (if (= 2 (length args))
-      ;; and we don't want any byte compile errors
-      (if (fboundp 'org-get-local-tags)
-          (org-get-local-tags)
-        ;; Fallback to original function if org-get-local-tags doesn't exist
-        (apply orig-fun args))
-    ;; the non-arg version doesn't return inherited tags, but
-    ;; org-get-tags does.
-    (org-get-tags)))
-
-(with-no-warnings
-  (when (= 8 (car (version-to-list org-version)))
-    ;; Shut up package-lint - compatibility shim for org 8.x (package requires org >= 9.3)
-    (defalias 'org-drill-defun 'defun)
-    (org-drill-defun org-latex-preview (&rest args)
-      (apply 'org-preview-latex-fragment args))))
-
 ;;;; Utilities ================================================================
 (defmacro org-drill-pop-random (place)
   "Remove an item randomly from PLACE."
