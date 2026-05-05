@@ -3986,8 +3986,13 @@ shuffling is done in place."
     (cond
      ((and (>= ch ?0) (<= ch ?5))
       (let ((current-box
+             ;; Default to 0 if the property isn't set — `org-entry-get'
+             ;; returns nil and `string-to-number' would error on nil.
+             ;; Box 0 is sensible: a downgrade stays at 0, a promotion
+             ;; goes to 1.
              (string-to-number
-              (org-entry-get (point) "DRILL_LEITNER_BOX" nil))))
+              (or (org-entry-get (point) "DRILL_LEITNER_BOX" nil)
+                  "0"))))
         (cond
          ((or (= ch ?0))
           (message "Refiled down to box: 1")
