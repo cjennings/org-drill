@@ -2261,13 +2261,16 @@ RESCHEDULE-FN is the function to reschedule."
            (ignore-errors
              (org-display-inline-images t))
            (org-drill-hide-drawers)
-           (org-clear-latex-preview)
-           (save-excursion
-             (org-mark-subtree)
-             (let ((beg (region-beginning))
-                   (end (region-end)))
-               (org--latex-preview-region beg end))
-             (deactivate-mark))
+           ;; LaTeX preview helpers require a window-system frame
+           ;; (upstream issue #44).  Skip on TTY.
+           (when (display-graphic-p)
+             (org-clear-latex-preview)
+             (save-excursion
+               (org-mark-subtree)
+               (let ((beg (region-beginning))
+                     (end (region-end)))
+                 (org--latex-preview-region beg end))
+               (deactivate-mark)))
            (org-drill-with-hidden-cloze-hints
             (funcall reschedule-fn session))))))
 
@@ -2285,9 +2288,14 @@ RESCHEDULE-FN is the function to reschedule."
        (org-drill-hide-subheadings-if 'org-drill-entry-p))))))
 
 (defun org-drill--show-latex-fragments ()
-  "Show latex fragment."
-  (org-clear-latex-preview)
-  (org-latex-preview '(16)))
+  "Show LaTeX fragments as inline images.
+No-op on TTY frames — `org-latex-preview' requires a window system
+and otherwise raises \"Window system frame should be used\" (upstream
+issue #44, 2021).  The TTY user just doesn't see preview images,
+which is the right behavior."
+  (when (display-graphic-p)
+    (org-clear-latex-preview)
+    (org-latex-preview '(16))))
 
 (defun org-drill-present-two-sided-card (session)
   (org-drill-with-hidden-comments
