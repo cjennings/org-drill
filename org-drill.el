@@ -3150,6 +3150,13 @@ work correctly with older versions of org mode. Your org mode version (%s) appea
            (setq org-drill-last-session
                  (org-drill-session)))))
     (cl-block org-drill
+      ;; Clear stale `end-pos' on resume.  The slot was set when the
+      ;; user interrupted the previous session (edit / quit), and
+      ;; carrying it over makes the post-resume `(if (oref session
+      ;; end-pos) ...)' branch fire — silently skipping
+      ;; `org-drill-final-report' (upstream issue #33).
+      (when resume-p
+        (setf (oref session end-pos) nil))
       (unless resume-p
         (org-drill-free-markers session t)
         (setf (oref session cram-mode) cram
