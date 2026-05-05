@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Emacs ${{ matrix.emacs-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs-version:
+          # Org 9.6 (our floor) ships built-in with Emacs 29; on Emacs
+          # 28 Cask pulls it from MELPA, so 28 still works as a target.
+          - '28.2'
+          - '29.4'
+          - 'snapshot'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Emacs
+        uses: jcs090218/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+
+      - name: Set up Cask
+        uses: cask/setup-cask@master
+
+      - name: Install dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if make setup; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::setup attempt $attempt failed, retrying in 15s"
+              sleep 15
+            fi
+          done
+          echo "::error::setup failed after 3 attempts"
+          exit 1
+
+      - name: Run unit tests
+        run: make test-unit
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Emacs
+        uses: jcs090218/setup-emacs@master
+        with:
+          version: '29.4'
+
+      - name: Set up Cask
+        uses: cask/setup-cask@master
+
+      - name: Install dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if make setup; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::setup attempt $attempt failed, retrying in 15s"
+              sleep 15
+            fi
+          done
+          echo "::error::setup failed after 3 attempts"
+          exit 1
+
+      # `make lint' is informational right now (the source has known
+      # docstring/style debt); kept here so warnings show up in PRs.
+      - name: Run linters
+        run: make lint
+
+      - name: Byte-compile
+        run: make compile
+
+      - name: Validate parens
+        run: make validate-parens
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Emacs
+        uses: jcs090218/setup-emacs@master
+        with:
+          version: '29.4'
+
+      - name: Set up Cask
+        uses: cask/setup-cask@master
+
+      - name: Install dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if make setup; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::setup attempt $attempt failed, retrying in 15s"
+              sleep 15
+            fi
+          done
+          echo "::error::setup failed after 3 attempts"
+          exit 1
+
+      - name: Run coverage
+        run: make coverage
+
+      - name: Print coverage summary
+        run: python3 scripts/coverage-summary.py
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-simplecov
+          path: .coverage/simplecov.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Send coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        continue-on-error: true
+        with:
+          file: .coverage/simplecov.json
+          format: simplecov
+        env:
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
