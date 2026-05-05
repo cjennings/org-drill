@@ -67,5 +67,55 @@
       (org-drill--route-rating-result session m1 0))
     (should shuffle-called)))
 
+;;;; org-drill--pick-next-marker
+
+(ert-deftest test-pick-next-marker-not-resuming-pops-from-queue ()
+  "Without resuming-p, the result is the popped pending entry."
+  (let ((session (org-drill-session)))
+    (cl-letf (((symbol-function 'org-drill-pop-next-pending-entry)
+               (lambda (_) 'popped-marker)))
+      (let ((result (org-drill--pick-next-marker session nil)))
+        (should (equal '(popped-marker . nil) result))))))
+
+(ert-deftest test-pick-next-marker-resuming-with-current-item-keeps-it ()
+  "When resuming-p is t and current-item is a live drill entry, return it
+and flip resume-p to nil so subsequent ticks don't repeat the same entry."
+  (let ((session (org-drill-session)))
+    (with-temp-buffer
+      (insert "* Drill :drill:\nbody\n")
+      (org-mode)
+      (goto-char (point-min))
+      (let ((m (point-marker)))
+        (oset session current-item m)
+        (let ((result (org-drill--pick-next-marker session t)))
+          (should (eq m (car result)))
+          (should (null (cdr result))))))))
+
+(ert-deftest test-pick-next-marker-resuming-with-nil-current-item-pops-fresh ()
+  "When resuming-p is t but current-item is nil, fall through to popping a
+fresh entry from the pending queue."
+  (let ((session (org-drill-session)))
+    (oset session current-item nil)
+    (cl-letf (((symbol-function 'org-drill-pop-next-pending-entry)
+               (lambda (_) 'fresh-marker)))
+      (let ((result (org-drill--pick-next-marker session t)))
+        (should (eq 'fresh-marker (car result)))
+        ;; resuming-p still flowing through.
+        (should (eq t (cdr result)))))))
+
+(ert-deftest test-pick-next-marker-resuming-with-non-drill-current-item-pops-fresh ()
+  "When current-item is set but no longer points at a drill entry, fall
+through to popping a fresh entry."
+  (let ((session (org-drill-session)))
+    (with-temp-buffer
+      (insert "Plain text — not a drill heading.\n")
+      (org-mode)
+      (goto-char (point-min))
+      (oset session current-item (point-marker))
+      (cl-letf (((symbol-function 'org-drill-pop-next-pending-entry)
+                 (lambda (_) 'fresh-marker)))
+        (let ((result (org-drill--pick-next-marker session t)))
+          (should (eq 'fresh-marker (car result))))))))
+
 (provide 'test-org-drill-route-rating-result)
 ;;; test-org-drill-route-rating-result.el ends here
