@@ -12,3 +12,4 @@ org-drill.html
 todo.org
 /.ai/
 /.coverage/
+/*-autoloads.el

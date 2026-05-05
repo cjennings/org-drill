@@ -42,10 +42,21 @@ DOCKER_TAG=26
 COVERAGE_DIR = .coverage
 COVERAGE_FILE = $(COVERAGE_DIR)/simplecov.json
 
+# Source file (single-file package)
+SOURCE_FILE = org-drill.el
+
+# ERT selector that excludes tests tagged :slow.  Applied to the
+# default `make test-*' and `make coverage' loops so a slow integration
+# suite doesn't dominate the fast feedback path.  `make test-name' is
+# left alone — if the user named a pattern, run it whether or not
+# anything matches is tagged slow.
+ERT_FAST_SELECTOR = (ert-run-tests-batch-and-exit '(not (tag :slow)))
+
 .PHONY: help test test-all test-unit test-integration test-file test-name setup build clean clean-elc
 .PHONY: robot robot-all robot-basic robot-leitner robot-all-card robot-spanish robot-explainer
 .PHONY: docker-test test-cp test-git
 .PHONY: coverage coverage-clean
+.PHONY: lint compile validate-parens
 
 # Default target
 help:
@@ -66,6 +77,11 @@ help:
 	@echo "Coverage:"
 	@echo "  make coverage          - Generate simplecov JSON at $(COVERAGE_FILE)"
 	@echo "  make coverage-clean    - Delete the coverage report file"
+	@echo ""
+	@echo "Validation & Lint:"
+	@echo "  make compile           - Byte-compile $(SOURCE_FILE)"
+	@echo "  make validate-parens   - Check $(SOURCE_FILE) for unbalanced parens"
+	@echo "  make lint              - Run checkdoc + package-lint + elisp-lint"
 	@echo ""
 	@echo "Advanced Targets:"
 	@echo "  make setup             - Install dependencies via Cask"
@@ -123,7 +139,7 @@ test-unit: setup
 			-l assess \
 			-l org-drill.el \
 			-l $$test \
-			-f ert-run-tests-batch-and-exit || failed=$$((failed + 1)); \
+			--eval "$(ERT_FAST_SELECTOR)" || failed=$$((failed + 1)); \
 	done; \
 	if [ $$failed -eq 0 ]; then \
 		echo "[✓] All unit tests passed"; \
@@ -170,7 +186,7 @@ endif
 		-l assess \
 		-l org-drill.el \
 		-l $(TEST_DIR)/$(FILE) \
-		-f ert-run-tests-batch-and-exit
+		--eval "$(ERT_FAST_SELECTOR)"
 	@echo "[✓] Tests in $(FILE) complete"
 
 # Run specific test by name/pattern
@@ -214,7 +230,7 @@ coverage: coverage-clean setup $(COVERAGE_DIR)
 			-l $(TEST_DIR)/run-coverage-file.el \
 			-l org-drill.el \
 			-l $$test \
-			-f ert-run-tests-batch-and-exit || failed=$$((failed + 1)); \
+			--eval "$(ERT_FAST_SELECTOR)" || failed=$$((failed + 1)); \
 	done; \
 	if [ $$failed -gt 0 ]; then \
 		echo "[!] $$failed test file(s) failed during coverage run"; \
@@ -232,6 +248,58 @@ coverage-clean:
 
 $(COVERAGE_DIR):
 	@mkdir -p $(COVERAGE_DIR)
+
+#
+# Validation & Lint
+#
+
+# Byte-compile the source file.  byte-compile-error-on-warn is left
+# nil so existing warnings don't fail the target — match `make build'
+# behavior.  Tighten when the warning backlog is cleared.
+compile: setup
+	@echo "[i] Byte-compiling $(SOURCE_FILE)..."
+	@$(EMACS_ENV) $(CASK) emacs --batch -q \
+		--eval "(progn \
+		  (setq byte-compile-error-on-warn nil) \
+		  (batch-byte-compile))" $(SOURCE_FILE)
+	@echo "[✓] Compilation complete"
+
+# Fast structural check — `check-parens' surfaces the line of the
+# offending paren without needing a full byte-compile pass.
+validate-parens:
+	@echo "[i] Checking $(SOURCE_FILE) for unbalanced parentheses..."
+	@$(EMACS_BATCH) --eval "(condition-case err \
+	    (progn \
+	      (find-file \"$(SOURCE_FILE)\") \
+	      (check-parens) \
+	      (kill-emacs 0)) \
+	    (error (progn \
+	      (message \"ERROR: %s\" err) \
+	      (kill-emacs 1))))"
+	@echo "[✓] $(SOURCE_FILE) parens balance"
+
+# Run all three linters.  Informational — does not exit non-zero on
+# findings, since the existing source has known docstring and style
+# debt to clear.  Re-tighten to a hard gate after the docstring pass
+# in todo.org is done.
+lint: setup
+	@echo "[i] Running checkdoc + package-lint + elisp-lint on $(SOURCE_FILE)..."
+	@$(EMACS_ENV) $(CASK) emacs --batch -q \
+		--eval "(progn \
+		  (require 'checkdoc) \
+		  (require 'package-lint nil t) \
+		  (require 'elisp-lint nil t) \
+		  (find-file \"$(SOURCE_FILE)\") \
+		  (when (featurep 'checkdoc) \
+		    (message \"-- checkdoc --\") \
+		    (checkdoc-current-buffer t)) \
+		  (when (featurep 'package-lint) \
+		    (message \"-- package-lint --\") \
+		    (package-lint-current-buffer)) \
+		  (when (featurep 'elisp-lint) \
+		    (message \"-- elisp-lint --\") \
+		    (elisp-lint-file \"$(SOURCE_FILE)\")))" || true
+	@echo "[i] Lint complete (informational — no hard failure)"
 
 #
 # Robot Tests (Automated UI Tests)
