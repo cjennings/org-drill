@@ -1429,15 +1429,20 @@ item will be scheduled exactly this many days into the future."
         (if (eql 'sm5 org-drill-spaced-repetition-algorithm)
             (setq org-drill-sm5-optimal-factor-matrix new-ofmatrix))
 
+        ;; Pick the schedule based on days-ahead.  The optional arg may be
+        ;; nil (callers omit it to mean "use the algorithm-computed
+        ;; next-interval").  The original cond compared `(= 0 days-ahead)'
+        ;; before any type guard, which crashed on nil.
         (cond
-         ((= 0 days-ahead)
+         ((and (numberp days-ahead) (= 0 days-ahead))
           (org-schedule '(4)))
-         ((cl-minusp days-ahead)
+         ((and (numberp days-ahead) (cl-minusp days-ahead))
           (org-schedule nil (current-time)))
          (t
-          (org-schedule nil (time-add (current-time)
-                                      (days-to-time
-                                       (round next-interval))))))))))
+          (let ((interval (if (numberp days-ahead) days-ahead next-interval)))
+            (org-schedule nil (time-add (current-time)
+                                        (days-to-time
+                                         (round interval)))))))))))
 
 (defun org-drill-hypothetical-next-review-date (quality)
   "Returns an integer representing the number of days into the future
