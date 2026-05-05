@@ -2770,6 +2770,11 @@ RESUMING-P is true if we are resuming a suspended drill session."
                   (push m (oref session done-entries))))
                 (setf (oref session current-item) nil)))))))))))
 
+(defun org-drill--quality-percent (q qualities)
+  "Percentage of QUALITIES equal to Q, rounded to integer.
+Returns 0 when QUALITIES is empty (instead of dividing by zero)."
+  (round (* 100 (cl-count q qualities)) (max 1 (length qualities))))
+
 (defun org-drill-final-report (session)
   (let* ((qualities (oref session qualities))
          (pass-percent
@@ -2795,18 +2800,12 @@ Session finished. Press a key to continue..."
            (format-seconds "%h:%.2m:%.2s"
                            (- (float-time (current-time))
                               (oref session start-time)))
-           (round (* 100 (cl-count 5 qualities))
-                  (max 1 (length qualities)))
-           (round (* 100 (cl-count 2 qualities))
-                  (max 1 (length qualities)))
-           (round (* 100 (cl-count 4 qualities))
-                  (max 1 (length qualities)))
-           (round (* 100 (cl-count 1 qualities))
-                  (max 1 (length qualities)))
-           (round (* 100 (cl-count 3 qualities))
-                  (max 1 (length qualities)))
-           (round (* 100 (cl-count 0 qualities))
-                  (max 1 (length qualities)))
+           (org-drill--quality-percent 5 qualities)
+           (org-drill--quality-percent 2 qualities)
+           (org-drill--quality-percent 4 qualities)
+           (org-drill--quality-percent 1 qualities)
+           (org-drill--quality-percent 3 qualities)
+           (org-drill--quality-percent 0 qualities)
            pass-percent
            org-drill-failure-quality
            (org-drill-pending-entry-count session)
