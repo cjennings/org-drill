@@ -75,6 +75,36 @@ read and re-activates it on the way out."
               ((symbol-function 'org-drill-entry-p) (lambda (&rest _) nil)))
       (should-error (org-drill-goto-drill-entry-heading)))))
 
+;;;; org-drill-test-display (developer helper)
+
+(ert-deftest test-org-drill-test-display-toggles-zysygy-tag ()
+  "The dev helper toggles a `zysygy' tag on, runs entry-f, then toggles off."
+  (with-temp-buffer
+    (insert "* Item\nbody\n")
+    (org-mode)
+    (goto-char (point-min))
+    (let ((entry-f-called nil))
+      (cl-letf (((symbol-function 'org-drill-entry-f)
+                 (lambda (&rest _) (setq entry-f-called t)))
+                ((symbol-function 'org-drill-test-display-rescheduler) #'ignore))
+        (org-drill-test-display))
+      (should entry-f-called)
+      ;; Tag was toggled off in the unwind-protect cleanup, so the
+      ;; entry should not be tagged.
+      (should-not (member "zysygy" (org-get-tags))))))
+
+(ert-deftest test-org-drill-test-display-rescheduler-runs-hook-and-reads-key ()
+  "The rescheduler runs the answer hook and waits on read-key-sequence."
+  (let ((hook-ran nil)
+        (key-read nil))
+    (let ((org-drill-display-answer-hook
+           (list (lambda () (setq hook-ran t)))))
+      (cl-letf (((symbol-function 'read-key-sequence)
+                 (lambda (&rest _) (setq key-read t) "x")))
+        (org-drill-test-display-rescheduler nil)))
+    (should hook-ran)
+    (should key-read)))
+
 ;;;; org-drill-add-cloze-fontification
 
 (ert-deftest test-add-cloze-fontification-with-flag-extends-keywords ()
