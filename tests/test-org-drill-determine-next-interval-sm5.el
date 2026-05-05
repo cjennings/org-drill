@@ -245,14 +245,14 @@ The SM5 floor is shared with SM2 via `org-drill-modify-e-factor'.")
 ;;; Error Cases - cl-assert violations
 
 (defmacro test-scheduler--should-cl-assert (&rest body)
-  "Assert BODY signals a cl-assert violation, catching via condition-case.
+  "Assert BODY signals a cl-assertion-failed via condition-case.
 
-Mirrors the simple8 test file's helper.  See its commentary."
-  `(should
-    (eq 'caught
-        (condition-case nil
-            (progn ,@body 'no-error)
-          (error 'caught)))))
+Mirrors the simple8 test file's helper.  See its commentary for why
+this avoids `should-error' / `should' on Emacs 29.4."
+  `(condition-case _err
+       (progn ,@body
+              (ert-fail "expected cl-assertion-failed signal, got none"))
+     (cl-assertion-failed nil)))
 
 (ert-deftest test-org-drill-determine-next-interval-sm5-error-negative-n ()
   "Error: n=-1 violates the (cl-assert (> n 0)) precondition."

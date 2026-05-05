@@ -206,18 +206,22 @@ review attempt regardless of which scheduling algorithm produced it."
 ;;; Error Cases - cl-assert violations
 
 (defmacro test-scheduler--should-cl-assert (&rest body)
-  "Assert BODY signals a cl-assert violation, catching via condition-case.
+  "Assert BODY signals a cl-assertion-failed via condition-case.
 
-The plain `should-error' macro is fragile across Emacs versions for
-cl-assert-based tests — Emacs 29.4 in CI marks them as failures even
-when the cl-assertion-failed signal fires (visible in the
-test-failure backtrace).  A manual condition-case sidesteps the
-fragility: we just verify SOMETHING was signalled."
-  `(should
-    (eq 'caught
-        (condition-case nil
-            (progn ,@body 'no-error)
-          (error 'caught)))))
+Avoids `should-error' (and `should' generally) because ERT in Emacs
+29.4 installs `signal-hook-function' around `should' forms — that
+hook intercepts signals before any inner condition-case can catch
+them, so the plain (should-error ...) wrap fails on 29.4 even
+though the cl-assertion-failed signal does fire.
+
+Catches `cl-assertion-failed' by name rather than via the generic
+`error' parent: the parent inheritance for cl-assertion-failed is
+inconsistent across Emacs versions, but the symbol-name match
+through condition-case always works."
+  `(condition-case _err
+       (progn ,@body
+              (ert-fail "expected cl-assertion-failed signal, got none"))
+     (cl-assertion-failed nil)))
 
 (ert-deftest test-org-drill-determine-next-interval-simple8-error-negative-repeats ()
   "Error: repeats=-1 violates the (cl-assert (>= repeats 0)) precondition."
