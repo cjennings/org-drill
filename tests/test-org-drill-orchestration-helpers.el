@@ -153,6 +153,28 @@
       (should final-report-shown)
       (should-not resume-hint-shown))))
 
+(ert-deftest test-show-end-message-marker-end-pos-jumps-to-marker ()
+  "When end-pos is a live marker, dispatcher navigates to it before showing
+the resume hint."
+  (let ((tmpfile (make-temp-file "org-drill-end-pos-" nil ".org")))
+    (unwind-protect
+        (let ((session (org-drill-session))
+              (jumped-to nil))
+          (with-current-buffer (find-file-noselect tmpfile)
+            (insert "* First :drill:\n* Second :drill:\nbody\n")
+            (org-mode)
+            (goto-char (point-max))
+            (let ((m (point-marker)))
+              (oset session end-pos m)
+              (cl-letf (((symbol-function 'org-drill-goto-entry)
+                         (lambda (mk) (setq jumped-to mk)))
+                        ((symbol-function 'org-reveal) #'ignore)
+                        ((symbol-function 'org-fold-show-entry) #'ignore)
+                        ((symbol-function 'org-drill--show-resume-hint) #'ignore))
+                (org-drill--show-end-message session)
+                (should (eq jumped-to m))))))
+      (when (file-exists-p tmpfile) (delete-file tmpfile)))))
+
 ;;;; org-drill--build-dest-id-table
 
 (ert-deftest test-build-dest-id-table-populates-id-marker-pairs ()

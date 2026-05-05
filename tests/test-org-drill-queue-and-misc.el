@@ -63,6 +63,38 @@
           ;; failed-entries is now empty.
           (should (null (oref session failed-entries))))))))
 
+(ert-deftest test-org-drill-pop-next-pending-entry-young-mature-branch ()
+  "When failed and overdue are empty but young-mature has items, pops from there."
+  (with-fixed-now
+    (with-temp-buffer
+      (insert "* Young :drill:\n")
+      (org-mode)
+      (let* ((session (org-drill-session))
+             (m (save-excursion (goto-char (point-min)) (point-marker))))
+        (oset session start-time (float-time (current-time)))
+        (oset session young-mature-entries (list m))
+        (let ((popped (org-drill-pop-next-pending-entry session)))
+          (should (eq m popped))
+          (should (null (oref session young-mature-entries))))))))
+
+(ert-deftest test-org-drill-pop-next-pending-entry-overdue-branch ()
+  "When failed is empty and overdue has items, pops the head of the overdue list."
+  (with-fixed-now
+    (with-temp-buffer
+      (insert "* Over1 :drill:\n* Over2 :drill:\n")
+      (org-mode)
+      (let* ((session (org-drill-session))
+             (m1 (save-excursion (goto-char (point-min)) (point-marker)))
+             (m2 (save-excursion (goto-char (point-min))
+                                 (re-search-forward "^\\* Over2" nil t)
+                                 (line-beginning-position)
+                                 (point-marker))))
+        (oset session start-time (float-time (current-time)))
+        (oset session overdue-entries (list m1 m2))
+        (let ((popped (org-drill-pop-next-pending-entry session)))
+          (should (eq m1 popped))
+          (should (equal (list m2) (oref session overdue-entries))))))))
+
 (ert-deftest test-org-drill-pop-next-pending-entry-falls-through-to-again ()
   "When all primary queues are empty but again-entries has items, pops from again."
   (with-fixed-now

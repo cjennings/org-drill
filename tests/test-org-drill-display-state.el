@@ -84,6 +84,56 @@
       (org-drill--restore-display)
       (should (null org-drill--saved-display-buffer)))))
 
+(ert-deftest test-restore-display-restores-variable-pitch-mode ()
+  "Restore turns variable-pitch-mode back on in the saved-display-buffer
+when it was active at session start."
+  (with-temp-buffer
+    (let ((toggled nil))
+      (cl-letf (((symbol-function 'variable-pitch-mode)
+                 (lambda (arg) (setq toggled arg))))
+        (let ((org-drill-text-size-during-session nil)
+              (org-drill-use-variable-pitch t)
+              (org-drill-hide-modeline-during-session nil)
+              (org-drill--saved-display-buffer (current-buffer))
+              (org-drill--saved-text-scale nil)
+              (org-drill--saved-variable-pitch-mode t)
+              (org-drill--saved-modeline-format nil))
+          (org-drill--restore-display)
+          (should (= 1 toggled))
+          (should (null org-drill--saved-variable-pitch-mode)))))))
+
+(ert-deftest test-restore-display-disables-variable-pitch-when-it-was-off ()
+  "Restore turns variable-pitch-mode off when it was off at session start."
+  (with-temp-buffer
+    (let ((toggled nil))
+      (cl-letf (((symbol-function 'variable-pitch-mode)
+                 (lambda (arg) (setq toggled arg))))
+        (let ((org-drill-text-size-during-session nil)
+              (org-drill-use-variable-pitch t)
+              (org-drill-hide-modeline-during-session nil)
+              (org-drill--saved-display-buffer (current-buffer))
+              (org-drill--saved-text-scale nil)
+              (org-drill--saved-variable-pitch-mode nil)
+              (org-drill--saved-modeline-format nil))
+          (org-drill--restore-display)
+          (should (= -1 toggled)))))))
+
+(ert-deftest test-restore-display-restores-text-scale ()
+  "Restore puts the default face's :height back to the saved value."
+  (let ((set-args nil))
+    (cl-letf (((symbol-function 'set-face-attribute)
+               (lambda (&rest args) (push args set-args))))
+      (let ((org-drill-text-size-during-session 14)
+            (org-drill-use-variable-pitch nil)
+            (org-drill-hide-modeline-during-session nil)
+            (org-drill--saved-display-buffer (current-buffer))
+            (org-drill--saved-text-scale 100)
+            (org-drill--saved-variable-pitch-mode 'unbound)
+            (org-drill--saved-modeline-format nil))
+        (org-drill--restore-display)
+        (should (cl-some (lambda (a) (memq 100 a)) set-args))
+        (should (null org-drill--saved-text-scale))))))
+
 ;;;; org-drill-current-scope (directory branch)
 
 (ert-deftest test-org-drill-current-scope-directory-returns-org-files-list ()
