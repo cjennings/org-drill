@@ -1126,7 +1126,7 @@ Returns a list:
                 quality))
   (cl-assert (> n 0))
   (cl-assert (and (>= quality 0) (<= quality 5)))
-  (if (<= quality org-drill-failure-quality)
+  (if (org-drill--quality-failed-p quality)
       ;; When an item is failed, its interval is reset to 0,
       ;; but its EF is unchanged
       (list -1 1 ef (1+ failures) meanq (1+ total-repeats)
@@ -1236,7 +1236,7 @@ Returns a list:
     (setq ef next-ef)
     (cond
      ;; "Failed" -- reset repetitions to 0,
-     ((<= quality org-drill-failure-quality)
+     ((org-drill--quality-failed-p quality)
       (list -1 1 old-ef (1+ failures) meanq (1+ total-repeats)
             of-matrix))     ; Not clear if OF matrix is supposed to be
                                         ; preserved
@@ -1310,7 +1310,7 @@ See the documentation for `org-drill-get-item-data' for a description of these."
                     (/ (+ quality (* meanq totaln 1.0)) (1+ totaln))
                   quality))
     (cond
-     ((<= quality org-drill-failure-quality)
+     ((org-drill--quality-failed-p quality)
       (cl-incf failures)
       (cl-incf totaln)
       (setf repeats 0
@@ -1543,7 +1543,7 @@ currently active (upstream issues #52 and #58)."
                                           (nth quality next-review-dates))))
           (push quality (oref session qualities))
           (cond
-           ((<= quality org-drill-failure-quality)
+           ((org-drill--quality-failed-p quality)
             (when org-drill-leech-failure-threshold
               (if (> (1+ failures) org-drill-leech-failure-threshold)
                   (org-toggle-tag "leech" 'on))))
@@ -1590,6 +1590,12 @@ the current topic."
   (org-drill-hide-subheadings-if
    (lambda () (let ((drill-heading (org-get-heading t)))
            (not (member drill-heading heading-list))))))
+
+(defun org-drill--quality-failed-p (quality)
+  "Non-nil when QUALITY counts as a failure for scheduling purposes.
+A failure rating sends the card back to box 1 (Leitner) or resets
+the interval (SM*).  The threshold is `org-drill-failure-quality'."
+  (<= quality org-drill-failure-quality))
 
 (defun org-drill--maybe-prepend-leech-warning (prompt)
   "Prepend the leech warning to PROMPT when applicable.
@@ -2741,7 +2747,7 @@ RESUMING-P is true if we are resuming a suspended drill session."
                 nil)                      ; skip this item
                (t
                 (cond
-                 ((<= result org-drill-failure-quality)
+                 ((org-drill--quality-failed-p result)
                   (if (oref session again-entries)
                       (setf (oref session again-entries)
                             (org-drill-shuffle (oref session again-entries))))
