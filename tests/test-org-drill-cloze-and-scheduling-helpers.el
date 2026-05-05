@@ -115,6 +115,22 @@ symbol itself."
     (should (equal 0 (org-drill-hypothetical-next-review-date 1)))
     (should (equal 0 (org-drill-hypothetical-next-review-date 2)))))
 
+(ert-deftest test-org-drill-hypothetical-next-review-date-sm2-algorithm ()
+  "With sm2 selected, hypothetical-next-review-date returns a positive number."
+  (with-fresh-drill-entry
+    (let ((org-drill-spaced-repetition-algorithm 'sm2))
+      (let ((days (org-drill-hypothetical-next-review-date 5)))
+        (should (numberp days))
+        (should (>= days 0))))))
+
+(ert-deftest test-org-drill-hypothetical-next-review-date-simple8-algorithm ()
+  "With simple8 selected, hypothetical-next-review-date returns a positive number."
+  (with-fresh-drill-entry
+    (let ((org-drill-spaced-repetition-algorithm 'simple8))
+      (let ((days (org-drill-hypothetical-next-review-date 5)))
+        (should (numberp days))
+        (should (>= days 0))))))
+
 (ert-deftest test-org-drill-hypothetical-next-review-date-quality-monotonic ()
   "Higher quality means longer next-interval — the curve should be monotonic
 non-decreasing across q=3 → q=5 on a virgin card."
