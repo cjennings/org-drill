@@ -1,0 +1,66 @@
+org-drill NEWS — user-facing highlights since the fork
+=======================================================
+
+For the full chronological log, see CHANGELOG.md.  This file
+collects the changes a user is most likely to feel.
+
+Since the fork (no tagged release yet)
+--------------------------------------
+
+* Several long-standing bugs that users reported upstream are
+  fixed.  If you've ever seen any of these, this fork should help:
+
+  - "[Y-08-27 Wed 16:%]"-shaped timestamps in DRILL_LAST_REVIEWED
+    (issue #59).
+  - Your default-input-method getting silently set to nil after a
+    drill session (issues #52, #58 — particularly noticeable for
+    users with non-Latin input methods).
+  - Drill entries whose answer lived inside a child sub-heading
+    being silently skipped (issue #13).
+  - The cloze face leaking onto unrelated org headings (issue #38).
+  - "Window system frame should be used" error when running
+    org-drill in a TTY emacsclient (issue #44 — affects tmux
+    setups in particular).
+  - org-drill-final-report not firing after an edit-and-resume
+    cycle (issue #33).
+  - "Wrong type argument: hash-table-p, nil" stopping a session
+    after the first new (no-ID) entry, forcing one-at-a-time
+    invocations (issue #53).
+  - Crash on package load when the persist file got corrupted
+    (issue #45).
+  - Stray "[debug] org-drill: at marker position N" message logged
+    on every drilled card.
+  - Cards with DRILL_CARD_TYPE: translate_number hitting a
+    void-function error.
+
+* Org 9.6 is now the minimum supported version.  org-drill calls
+  org-fold-show-entry / org-fold-show-subtree (introduced in 9.6)
+  in seven places without guards — the dependency now matches
+  what the runtime needs, so a too-old Org will fail at install
+  time with a clear message rather than a cryptic void-function
+  error during a session.
+
+* org-drill-resume and org-drill-again now produce a clear
+  user-error when there's no previous session to resume, instead
+  of a cryptic eieio type error.
+
+* New M-x targets exposed via the existing keymap haven't been
+  added; everything is still launched via M-x org-drill,
+  M-x org-drill-cram, M-x org-drill-resume, etc.
+
+For developers
+--------------
+
+* Test coverage went from ~12% to ~78% on org-drill.el.  The
+  tests/ directory now holds ~370 ERT tests across 27 files.
+
+* GitHub Actions CI runs the test matrix (Emacs 28.2 / 29.4 /
+  snapshot), lint, and coverage on every push to main.
+
+* The Makefile gained `make coverage`, `make compile`,
+  `make lint`, and `make validate-parens` targets.  See the
+  CONTRIBUTING.md file for the full developer setup.
+
+* `make install` was renamed to `make setup` (it installs Cask
+  dependencies into a project-local .cask/ directory, not the
+  package onto the user's system).
