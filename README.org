@@ -8,7 +8,7 @@
 [[https://github.com/cjennings/org-drill/actions/workflows/ci.yml][file:https://github.com/cjennings/org-drill/actions/workflows/ci.yml/badge.svg]]
 [[https://coveralls.io/github/cjennings/org-drill?branch=main][file:https://coveralls.io/repos/github/cjennings/org-drill/badge.svg?branch=main]]
 
-Org-Drill is a spaced-repetition flashcard system for Org Mode.  Recall ratings (0–5) feed an SM2, SM5, or Simple8 scheduler that picks the next review date.
+Org-Drill turns Org Mode headings into flashcards and drills you on them using a spaced-repetition algorithm.  You write your cards as plain Org headings, tag them =:drill:=, and =M-x org-drill= walks you through the ones that are due.  Ratings (0–5) feed a scheduling algorithm (SM2, SM5, or Simple8) that spaces out future reviews.
 
 " /Memory is the residue of thought./ "
 — /Daniel Willingham/
@@ -215,7 +215,7 @@ Issues and pull requests welcome on [[https://github.com/cjennings/org-drill][Gi
 
 Org-drill started life as a contrib in Org Mode itself (when the Org repo had a =contrib/lisp/= directory), authored by [[https://github.com/eeeickythump][Paul Sexton]].  It later moved to its own [[https://gitlab.com/phillord/org-drill][GitLab repo under Phil Lord]] when Org dropped contrib.  Phil's repo carried the project through several years of fixes and feature additions.
 
-This fork picks up where Phil's repo paused.  I emailed phillord asking how I could help; if I don't hear back I plan to ask to take over upstream maintenance.  Meanwhile bugs are getting fixed here and tests are filling in.
+This fork picks up where Phil's repo paused.  Bug fixes are landing here, test coverage is climbing, and the project is being modernized for current Emacs and Org versions.
 
 For the deep manual — every card type, every customization, plus a working deck you can drill against to see each card-type in action — open [[file:org-drill.org][=org-drill.org=]] in Emacs.
 
