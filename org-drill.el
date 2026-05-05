@@ -231,10 +231,17 @@ Mature items are due for review, but are not new."
   "Delimiter in cloze expression for hints.")
 
 (defun org-drill--compute-cloze-regexp ()
-  "Return a regexp that detects clozes."
+  "Return a regexp that detects clozes.
+
+The inner match is constrained to non-newline characters so a cloze
+stays within one line.  An older version used
+`[[:cntrl:][:graph:][:space:]]' which silently included newline,
+letting a stray `[' match all the way to a `]' several lines later
+and bleeding the cloze face onto intervening org headings (upstream
+issue #38)."
   (concat "\\("
           (regexp-quote org-drill-left-cloze-delimiter)
-          "[[:cntrl:][:graph:][:space:]]+?\\)\\(\\|"
+          "[^\n]+?\\)\\(\\|"
           (regexp-quote org-drill-hint-separator)
           ".+?\\)\\("
           (regexp-quote org-drill-right-cloze-delimiter)
