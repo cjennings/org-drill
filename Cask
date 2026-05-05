@@ -6,6 +6,7 @@
 (package-file "org-drill.el")
 
 (development
- (depends-on "assess"))
+ (depends-on "assess")
+ (depends-on "undercover"))
 (depends-on "org" "9.2")
 

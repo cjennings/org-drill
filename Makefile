@@ -9,7 +9,7 @@
 #   make robot             - Run basic robot tests
 #   make robot-all         - Run all robot tests
 #   make docker-test       - Run tests in Docker (multiple Emacs versions)
-#   make install           - Install dependencies via Cask
+#   make setup             - Install dependencies via Cask
 #   make clean             - Remove generated files
 
 # Emacs binary to use (override with: make EMACS=emacs29 test)
@@ -38,9 +38,14 @@ EMACS_BATCH = $(EMACS) --batch --no-site-file --no-site-lisp
 # Docker configuration
 DOCKER_TAG=26
 
-.PHONY: help test test-all test-unit test-integration test-file test-name install build clean clean-elc
+# Coverage configuration
+COVERAGE_DIR = .coverage
+COVERAGE_FILE = $(COVERAGE_DIR)/simplecov.json
+
+.PHONY: help test test-all test-unit test-integration test-file test-name setup build clean clean-elc
 .PHONY: robot robot-all robot-basic robot-leitner robot-all-card robot-spanish robot-explainer
 .PHONY: docker-test test-cp test-git
+.PHONY: coverage coverage-clean
 
 # Default target
 help:
@@ -58,8 +63,12 @@ help:
 	@echo "  make test-file FILE=<filename>  - Run specific test file"
 	@echo "  make test-name TEST=<pattern>   - Run tests matching pattern"
 	@echo ""
+	@echo "Coverage:"
+	@echo "  make coverage          - Generate simplecov JSON at $(COVERAGE_FILE)"
+	@echo "  make coverage-clean    - Delete the coverage report file"
+	@echo ""
 	@echo "Advanced Targets:"
-	@echo "  make install           - Install dependencies via Cask"
+	@echo "  make setup             - Install dependencies via Cask"
 	@echo "  make build             - Build package via Cask"
 	@echo "  make docker-test       - Run tests in Docker (multiple Emacs versions)"
 	@echo "  make clean             - Remove generated files"
@@ -82,7 +91,7 @@ help:
 all: robot test-unit
 
 # Install dependencies
-install:
+setup:
 	@if ! command -v $(CASK) >/dev/null 2>&1; then \
 		echo "[✗] Cask not found. Please install Cask first:"; \
 		echo "    https://github.com/cask/cask"; \
@@ -104,7 +113,7 @@ test: robot test-unit
 test-all: robot-all test-unit test-integration
 
 # Run unit tests only
-test-unit: install
+test-unit: setup
 	@echo "[i] Running unit tests ($(words $(UNIT_TESTS)) files)..."
 	@failed=0; \
 	for test in $(UNIT_TESTS); do \
@@ -124,7 +133,7 @@ test-unit: install
 	fi
 
 # Run integration tests only
-test-integration: install
+test-integration: setup
 	@echo "[i] Running integration tests ($(words $(INTEGRATION_TESTS)) files)..."
 	@if [ $(words $(INTEGRATION_TESTS)) -eq 0 ]; then \
 		echo "[i] No integration tests found"; \
@@ -149,7 +158,7 @@ test-integration: install
 
 # Run specific test file
 # Usage: make test-file FILE=org-drill-test.el
-test-file: install
+test-file: setup
 ifndef FILE
 	@echo "[✗] Error: FILE parameter required"
 	@echo "Usage: make test-file FILE=org-drill-test.el"
@@ -167,7 +176,7 @@ endif
 # Run specific test by name/pattern
 # Usage: make test-name TEST=load-test
 #        make test-name TEST="find-*"
-test-name: install
+test-name: setup
 ifndef TEST
 	@echo "[✗] Error: TEST parameter required"
 	@echo "Usage: make test-name TEST=load-test"
@@ -182,6 +191,47 @@ endif
 		$(foreach test,$(ALL_TESTS),-l $(test)) \
 		--eval '(ert-run-tests-batch-and-exit "$(TEST)")'
 	@echo "[✓] Tests matching '$(TEST)' complete"
+
+#
+# Coverage (undercover + simplecov JSON)
+#
+# Each unit-test file runs in its own Emacs process (matching `make
+# test-unit'); run-coverage-file.el instruments org-drill.el before the
+# source is loaded, and undercover merges per-file results into a single
+# simplecov JSON.
+
+coverage: coverage-clean setup $(COVERAGE_DIR)
+	@echo "[i] Cleaning .elc files so undercover can instrument source..."
+	@find . -name "*.elc" -delete
+	@echo "[i] Running coverage across $(words $(UNIT_TESTS)) unit-test file(s)..."
+	@echo "    (slower than 'make test-unit' — each file runs in its own Emacs)"
+	@failed=0; \
+	for test in $(UNIT_TESTS); do \
+		echo "  Coverage: $$test..."; \
+		$(EMACS_ENV) $(CASK) emacs --batch -q \
+			-l ert \
+			-l assess \
+			-l $(TEST_DIR)/run-coverage-file.el \
+			-l org-drill.el \
+			-l $$test \
+			-f ert-run-tests-batch-and-exit || failed=$$((failed + 1)); \
+	done; \
+	if [ $$failed -gt 0 ]; then \
+		echo "[!] $$failed test file(s) failed during coverage run"; \
+		exit 1; \
+	fi
+	@if [ -f $(COVERAGE_FILE) ]; then \
+		echo "[✓] Coverage report: $(COVERAGE_FILE) ($$(du -h $(COVERAGE_FILE) | cut -f1))"; \
+	else \
+		echo "[!] No coverage file produced; check that undercover is installed"; \
+		exit 1; \
+	fi
+
+coverage-clean:
+	@rm -f $(COVERAGE_FILE)
+
+$(COVERAGE_DIR):
+	@mkdir -p $(COVERAGE_DIR)
 
 #
 # Robot Tests (Automated UI Tests)
