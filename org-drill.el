@@ -1941,15 +1941,22 @@ visual overlay, or with the string TEXT if it is supplied."
 
 (defun org-drill-hide-drawers ()
   "Hide all drawers in the current entry, including PROPERTIES drawer.
-This is more reliable than `org-cycle-hide-drawers' for drill display."
+This is more reliable than `org-cycle-hide-drawers' for drill display.
+
+Drawer-end was previously captured as the value of `(point)' after
+the search — always a number, so the subsequent `(when drawer-end)'
+guard was dead.  Capture the search result itself and gate on that,
+otherwise a malformed drawer (no `:END:') ends up with a junk
+overlay covering whatever range point happened to be at."
   (save-excursion
     (org-back-to-heading t)
     (let ((end (save-excursion (org-end-of-subtree t t))))
       (while (re-search-forward org-drawer-regexp end t)
         (let* ((drawer-start (match-beginning 0))
                (drawer-end (save-excursion
-                            (re-search-forward "^[ \t]*:END:[ \t]*$" end t)
-                            (point))))
+                             (when (re-search-forward
+                                    "^[ \t]*:END:[ \t]*$" end t)
+                               (point)))))
           (when drawer-end
             (org-drill-hide-region drawer-start drawer-end)))))))
 
