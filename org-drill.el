@@ -912,23 +912,6 @@ drill entry."
   (and (org-drill-entry-p)
        (member "leech" (org-get-tags nil t))))
 
-;; (defun org-drill-entry-due-p ()
-;;   (cond
-;;    (*org-drill-cram-mode*
-;;     (let ((hours (org-drill-hours-since-last-review)))
-;;       (and (org-drill-entry-p)
-;;            (or (null hours)
-;;                (>= hours org-drill-cram-hours)))))
-;;    (t
-;;     (let ((item-time (org-get-scheduled-time (point))))
-;;       (and (org-drill-entry-p)
-;;            (or (not (eql 'skip org-drill-leech-method))
-;;                (not (org-drill-entry-leech-p)))
-;;            (or (null item-time)         ; not scheduled
-;;                (not (cl-minusp             ; scheduled for today/in past
-;;                      (- (time-to-days (current-time))
-;;                         (time-to-days item-time))))))))))
-
 (defun org-drill-entry-days-overdue (session)
   "Returns:
 - NIL if the item is not to be regarded as scheduled for review at all.
@@ -1612,26 +1595,6 @@ currently active (upstream issues #52 and #58)."
       'edit)
      (t
       nil))))
-
-;; (defun org-drill-hide-all-subheadings-except (heading-list)
-;;   "Returns a list containing the position of each immediate subheading of
-;; the current topic."
-;;   (let ((drill-entry-level (org-current-level))
-;;         (drill-sections nil)
-;;         (drill-heading nil))
-;;     (org-fold-show-subtree)
-;;     (save-excursion
-;;       (org-map-entries
-;;        (lambda ()
-;;          (when (and (not (outline-invisible-p))
-;;                     (> (org-current-level) drill-entry-level))
-;;            (setq drill-heading (org-get-heading t))
-;;            (unless (and (= (org-current-level) (1+ drill-entry-level))
-;;                         (member drill-heading heading-list))
-;;              (hide-subtree))
-;;            (push (point) drill-sections)))
-;;        "" 'tree))
-;;     (reverse drill-sections)))
 
 (defun org-drill-hide-subheadings-if (test)
   "TEST is a function taking no arguments. TEST will be called for each
@@ -3374,27 +3337,6 @@ values as `org-drill-scope'."
   (when org-drill-use-visible-cloze-face-p
     (add-to-list 'org-font-lock-extra-keywords
                  (cl-first org-drill-cloze-keywords))))
-
-
-;; Can't add to org-mode-hook, because local variables won't have been loaded
-;; yet.
-
-;; (defun org-drill-add-cloze-fontification ()
-;;   (when (eql major-mode 'org-mode)
-;;     ;; Compute local versions of the regexp for cloze deletions, in case
-;;     ;; the left and right delimiters are redefined locally.
-;;     (setq-local org-drill-cloze-regexp (org-drill--compute-cloze-regexp))
-;;     (setq-local org-drill-cloze-keywords (org-drill--compute-cloze-keywords))
-;;     (when org-drill-use-visible-cloze-face-p
-;;       (font-lock-add-keywords nil       ;'org-mode
-;;                               org-drill-cloze-keywords
-;;                               nil))))
-
-;; XXX
-;; (add-hook 'hack-local-variables-hook
-;;           'org-drill-add-cloze-fontification)
-;;
-;; (org-drill-add-cloze-fontification)
 
 
 ;;; Synching card collections =================================================
