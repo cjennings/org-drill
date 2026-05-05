@@ -2748,7 +2748,6 @@ RESUMING-P is true if we are resuming a suspended drill session."
           (error "Unexpectedly ran out of pending drill items"))
         (save-excursion
           (org-drill-goto-entry m)
-          (message "[debug] org-drill: at marker position %s" (marker-position m))
           (cond
            ((not (org-at-heading-p))
             (error "Not at heading for entry %s" m))
