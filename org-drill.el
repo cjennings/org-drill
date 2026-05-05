@@ -1240,11 +1240,6 @@ Returns a list:
       (list -1 1 old-ef (1+ failures) meanq (1+ total-repeats)
             of-matrix))     ; Not clear if OF matrix is supposed to be
                                         ; preserved
-     ;; For a zero-based quality of 4 or 5, don't repeat
-     ;; ((and (>= quality 4)
-     ;;       (not org-learn-always-reschedule))
-     ;;  (list 0 (1+ n) ef failures meanq
-     ;;        (1+ total-repeats) of-matrix))     ; 0 interval = unschedule
      (t
       (setq interval (org-drill-inter-repetition-interval-sm5
                       last-interval n ef of-matrix))
@@ -2349,12 +2344,6 @@ items if FORCE-SHOW-FIRST or FORCE-SHOW-LAST is non-nil)."
                 (cl-incf cnt)
                 (if (memq cnt match-nums)
                     (org-drill-hide-matched-cloze-text)))))))
-      ;; (loop
-      ;;  do (re-search-forward org-drill-cloze-regexp
-      ;;                        item-end t pos-to-hide)
-      ;;  while (org-drill-pos-in-regexp (match-beginning 0)
-      ;;                           org-link-bracket-re 1))
-      ;; (org-drill-hide-matched-cloze-text)))))
       (org-drill--show-latex-fragments)
       (ignore-errors
         (org-display-inline-images t))
@@ -2564,10 +2553,6 @@ See `org-drill' for more details."
 
 (defun org-drill-entry-f (session complete-func)
   (org-drill-goto-drill-entry-heading)
-  ;;(unless (org-drill-part-of-drill-entry-p)
-  ;;  (error "Point is not inside a drill entry"))
-  ;;(unless (org-at-heading-p)
-  ;;  (org-back-to-heading))
   (let ((card-type (org-entry-get (point) "DRILL_CARD_TYPE" t))
         (answer-fn 'org-drill-present-default-answer)
         (cont nil))
@@ -3023,9 +3008,6 @@ STATUS is one of the following values:
             (cl-case status
               (:unscheduled
                (cl-incf (oref session dormant-entry-count)))
-              ;; (:tomorrow
-              ;;  (cl-incf *org-drill-dormant-entry-count*)
-              ;;  (cl-incf *org-drill-due-tomorrow-count*))
               (:future
                (cl-incf (oref session dormant-entry-count))
                (if (eq -1 due)
