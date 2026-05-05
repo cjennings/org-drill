@@ -8,7 +8,7 @@
 [[https://github.com/cjennings/org-drill/actions/workflows/ci.yml][file:https://github.com/cjennings/org-drill/actions/workflows/ci.yml/badge.svg]]
 [[https://coveralls.io/github/cjennings/org-drill?branch=main][file:https://coveralls.io/repos/github/cjennings/org-drill/badge.svg?branch=main]]
 
-Org-Drill turns Org Mode headings into flashcards and drills you on them using a spaced-repetition algorithm.  You write your cards as plain Org headings, tag them =:drill:=, and =M-x org-drill= walks you through the ones that are due.  Ratings (0–5) feed a scheduling algorithm (SM2, SM5, or Simple8) that spaces out future reviews.
+Org-Drill is a spaced-repetition flashcard system for Org Mode.  Recall ratings (0–5) feed an SM2, SM5, or Simple8 scheduler that picks the next review date.
 
 " /Memory is the residue of thought./ "
 — /Daniel Willingham/
@@ -122,7 +122,7 @@ Sixty seconds from install to first drill:
 
 Org-drill will show you each card, wait for you to think of the answer, and let you reveal it with any key.  Rate yourself 0 (forgot) to 5 (perfect) — that rating sets when you'll see the card again.
 
-The bundled =org-drill.org= file in this repo is also a working drill deck — open it in Emacs and =M-x org-drill= to see every card type in action.  =spanish.org= is another worked example, oriented at language learning.
+The bundled [[file:org-drill.org][=org-drill.org=]] file in this repo is also a working drill deck — open it in Emacs and =M-x org-drill= to see every card type in action.  =spanish.org= is another worked example, oriented at language learning.
 
 ** In-Session Keys
 :PROPERTIES:
@@ -217,7 +217,7 @@ Org-drill started life as a contrib in Org Mode itself (when the Org repo had a 
 
 This fork picks up where Phil's repo paused.  I emailed phillord asking how I could help; if I don't hear back I plan to ask to take over upstream maintenance.  Meanwhile bugs are getting fixed here and tests are filling in.
 
-For the deep manual — every card type, every customization, plus a working deck you can drill against to see each card-type in action — open =org-drill.org= in Emacs.
+For the deep manual — every card type, every customization, plus a working deck you can drill against to see each card-type in action — open [[file:org-drill.org][=org-drill.org=]] in Emacs.
 
 ** License
 :PROPERTIES:
