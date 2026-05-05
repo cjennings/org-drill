@@ -2043,13 +2043,19 @@ Saves current settings and applies drill-specific display preferences."
                    "")))))))
 
 (defun org-drill-hide-cloze-hints ()
-  "Hide cloze hints."
+  "Hide cloze hints.
+
+The cloze regex's hint group is `\\(\\|HINTSEP.+?\\)' — an empty
+alternation — so it always participates in the match.  Check for an
+empty match (start = end) rather than nil match-beginning, otherwise
+this function creates a zero-width overlay for every hint-less cloze."
   (save-excursion
     (while (re-search-forward org-drill-cloze-regexp nil t)
       (unless (or (save-match-data
                     (org-drill-pos-in-regexp (match-beginning 0)
                                        org-link-bracket-re 1))
-                  (null (match-beginning 2))) ; hint subexpression matched
+                  ;; Empty match → no hint present, nothing to hide.
+                  (= (match-beginning 2) (match-end 2)))
         (org-drill-hide-region (match-beginning 2) (match-end 2))))))
 
 (defmacro org-drill-with-replaced-entry-text (text &rest body)
