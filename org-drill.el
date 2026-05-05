@@ -3656,54 +3656,26 @@ returns its return value."
 ;;; Not very interesting, but included to demonstrate how a presentation
 ;;; function can manipulate which subheading are hidden versus shown.
 
+(defconst org-drill--spanish-verb-prompts
+  '(("Infinitive" . "Translate this Spanish verb, and conjugate it for the *present* tense.")
+    ("English"    . "For the *present* tense, conjugate the Spanish translation of this English verb.")
+    ("Infinitive" . "Translate this Spanish verb, and conjugate it for the *past* tense.")
+    ("English"    . "For the *past* tense, conjugate the Spanish translation of this English verb.")
+    ("Infinitive" . "Translate this Spanish verb, and conjugate it for the *future perfect* tense.")
+    ("English"    . "For the *future perfect* tense, conjugate the Spanish translation of this English verb."))
+  "Six (REVEAL . PROMPT) pairs for `org-drill-present-spanish-verb'.
+Each card-presentation chooses one at random, hiding all subheadings
+except REVEAL and showing PROMPT in the rating prompt.")
+
 (defun org-drill-present-spanish-verb (session)
-  (let ((prompt nil))
-    (org-drill-with-hidden-comments
-     (org-drill-with-hidden-cloze-hints
-      (org-drill-with-hidden-cloze-text
-       (cl-case (cl-random 6)
-         ;; PWL 2018-06-22
-         ;; As far as I can tell, neither prompt nor reveal-headings
-         ;; do anything here. They never seem to appear anyway. But
-         ;; this might be because I broke things when cleaning up the
-         ;; dynamic binding.
-         (0
-          (org-drill-hide-all-subheadings-except '("Infinitive"))
-          (setq prompt
-                (concat "Translate this Spanish verb, and conjugate it "
-                        "for the *present* tense.")
-                ;;reveal-headings '("English" "Present Tense" "Notes")
-                ))
-         (1
-          (org-drill-hide-all-subheadings-except '("English"))
-          (setq prompt (concat "For the *present* tense, conjugate the "
-                               "Spanish translation of this English verb.")
-                ;;reveal-headings '("Infinitive" "Present Tense" "Notes")
-                ))
-         (2
-          (org-drill-hide-all-subheadings-except '("Infinitive"))
-          (setq prompt (concat "Translate this Spanish verb, and "
-                               "conjugate it for the *past* tense.")
-                ;;reveal-headings '("English" "Past Tense" "Notes")
-                ))
-         (3
-          (org-drill-hide-all-subheadings-except '("English"))
-          (setq prompt (concat "For the *past* tense, conjugate the "
-                               "Spanish translation of this English verb.")
-                ;;reveal-headings '("Infinitive" "Past Tense" "Notes")
-                ))
-         (4
-          (org-drill-hide-all-subheadings-except '("Infinitive"))
-          (setq prompt (concat "Translate this Spanish verb, and "
-                               "conjugate it for the *future perfect* tense.")
-                ;;reveal-headings '("English" "Future Perfect Tense" "Notes")
-                ))
-         (5
-          (org-drill-hide-all-subheadings-except '("English"))
-          (setq prompt (concat "For the *future perfect* tense, conjugate the "
-                               "Spanish translation of this English verb.")
-                ;;reveal-headings '("Infinitive" "Future Perfect Tense" "Notes")
-                )))
+  (org-drill-with-hidden-comments
+   (org-drill-with-hidden-cloze-hints
+    (org-drill-with-hidden-cloze-text
+     (let* ((choice (nth (cl-random (length org-drill--spanish-verb-prompts))
+                         org-drill--spanish-verb-prompts))
+            (reveal (car choice))
+            (prompt (cdr choice)))
+       (org-drill-hide-all-subheadings-except (list reveal))
        (org-drill-hide-drawers)
        (prog1 (org-drill-presentation-prompt session prompt)
          (org-drill-hide-subheadings-if 'org-drill-entry-p)))))))
