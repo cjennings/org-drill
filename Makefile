@@ -9,13 +9,13 @@
 #   make robot             - Run basic robot tests
 #   make robot-all         - Run all robot tests
 #   make docker-test       - Run tests in Docker (multiple Emacs versions)
-#   make setup             - Install dependencies via Cask
+#   make setup             - Install dependencies via Eask
 #   make clean             - Remove generated files
 
 # Emacs binary to use (override with: make EMACS=emacs29 test)
 EMACS ?= emacs
-# Check for Cask in PATH or common installation location
-CASK ?= $(shell command -v cask 2>/dev/null || echo "$(HOME)/.cask/bin/cask")
+# Check for Eask in PATH or common installation location
+EASK ?= $(shell command -v eask 2>/dev/null || echo "$(HOME)/.local/bin/eask")
 
 # Include local overrides if present
 -include makefile-local
@@ -84,8 +84,8 @@ help:
 	@echo "  make lint              - Run checkdoc + package-lint + elisp-lint"
 	@echo ""
 	@echo "Advanced Targets:"
-	@echo "  make setup             - Install dependencies via Cask"
-	@echo "  make build             - Build package via Cask"
+	@echo "  make setup             - Install dependencies via Eask"
+	@echo "  make build             - Byte-compile package via Eask"
 	@echo "  make docker-test       - Run tests in Docker (multiple Emacs versions)"
 	@echo "  make clean             - Remove generated files"
 	@echo "  make clean-elc         - Remove compiled .elc files"
@@ -108,19 +108,19 @@ all: robot test-unit
 
 # Install dependencies
 setup:
-	@if ! command -v $(CASK) >/dev/null 2>&1; then \
-		echo "[✗] Cask not found. Please install Cask first:"; \
-		echo "    https://github.com/cask/cask"; \
-		echo "    Or: curl -fsSL https://raw.githubusercontent.com/cask/cask/master/go | python"; \
+	@if ! command -v $(EASK) >/dev/null 2>&1; then \
+		echo "[✗] Eask not found. Please install Eask first:"; \
+		echo "    https://emacs-eask.github.io/"; \
+		echo "    Or: npm install -g @emacs-eask/cli"; \
 		exit 1; \
 	fi
-	@echo "[i] Installing dependencies via Cask..."
-	@$(EMACS_ENV) $(CASK) install
+	@echo "[i] Installing dependencies via Eask..."
+	@$(EMACS_ENV) $(EASK) install-deps --dev
 	@echo "[✓] Dependencies installed"
 
-# Build package
+# Byte-compile package
 build:
-	$(EMACS_ENV) $(CASK) build
+	$(EMACS_ENV) $(EASK) compile
 
 # Run all tests
 test: robot test-unit
@@ -134,7 +134,7 @@ test-unit: setup
 	@failed=0; \
 	for test in $(UNIT_TESTS); do \
 		echo "  Testing $$test..."; \
-		$(EMACS_ENV) $(CASK) emacs --batch -q \
+		$(EMACS_ENV) $(EASK) emacs --batch -q \
 			-l ert \
 			-l assess \
 			-l org-drill.el \
@@ -157,7 +157,7 @@ test-integration: setup
 		failed=0; \
 		for test in $(INTEGRATION_TESTS); do \
 			echo "  Testing $$test..."; \
-			$(EMACS_ENV) $(CASK) emacs --batch -q \
+			$(EMACS_ENV) $(EASK) emacs --batch -q \
 				-l ert \
 				-l assess \
 				-l org-drill.el \
@@ -181,7 +181,7 @@ ifndef FILE
 	@exit 1
 endif
 	@echo "[i] Running tests in $(FILE)..."
-	@$(EMACS_ENV) $(CASK) emacs --batch -q \
+	@$(EMACS_ENV) $(EASK) emacs --batch -q \
 		-l ert \
 		-l assess \
 		-l org-drill.el \
@@ -200,7 +200,7 @@ ifndef TEST
 	@exit 1
 endif
 	@echo "[i] Running tests matching pattern: $(TEST)..."
-	@$(EMACS_ENV) $(CASK) emacs --batch -q \
+	@$(EMACS_ENV) $(EASK) emacs --batch -q \
 		-l ert \
 		-l assess \
 		-l org-drill.el \
@@ -224,7 +224,7 @@ coverage: coverage-clean setup $(COVERAGE_DIR)
 	@failed=0; \
 	for test in $(UNIT_TESTS); do \
 		echo "  Coverage: $$test..."; \
-		$(EMACS_ENV) $(CASK) emacs --batch -q \
+		$(EMACS_ENV) $(EASK) emacs --batch -q \
 			-l ert \
 			-l assess \
 			-l $(TEST_DIR)/run-coverage-file.el \
@@ -258,7 +258,7 @@ $(COVERAGE_DIR):
 # behavior.  Tighten when the warning backlog is cleared.
 compile: setup
 	@echo "[i] Byte-compiling $(SOURCE_FILE)..."
-	@$(EMACS_ENV) $(CASK) emacs --batch -q \
+	@$(EMACS_ENV) $(EASK) emacs --batch -q \
 		--eval "(progn \
 		  (setq byte-compile-error-on-warn nil) \
 		  (batch-byte-compile))" $(SOURCE_FILE)
@@ -284,7 +284,7 @@ validate-parens:
 # in todo.org is done.
 lint: setup
 	@echo "[i] Running checkdoc + package-lint + elisp-lint on $(SOURCE_FILE)..."
-	@$(EMACS_ENV) $(CASK) emacs --batch -q \
+	@$(EMACS_ENV) $(EASK) emacs --batch -q \
 		--eval "(progn \
 		  (require 'checkdoc) \
 		  (require 'package-lint nil t) \

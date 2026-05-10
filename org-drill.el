@@ -8,7 +8,7 @@
 ;; Package-Requires: ((emacs "25.3") (seq "2.14") (org "9.6") (persist "0.3"))
 ;; Keywords: games, outlines, multimedia
 
-;; URL: https://gitlab.com/phillord/org-drill/issues
+;; URL: https://github.com/cjennings/org-drill
 ;;
 ;; This file is not part of GNU Emacs.
 ;;

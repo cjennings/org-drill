@@ -14,7 +14,7 @@
 (unless (require 'undercover nil t)
   (message "")
   (message "ERROR: undercover not installed.")
-  (message "Add `undercover' to Cask as a development dep, then run `make setup'.")
+  (message "Add `undercover' to Eask as a development dep, then run `make setup'.")
   (message "")
   (kill-emacs 1))
 
