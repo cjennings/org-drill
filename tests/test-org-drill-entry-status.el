@@ -133,14 +133,20 @@ because its days-overdue computes nil."
 ;;;; org-drill-entry-days-since-creation
 
 (ert-deftest test-org-drill-entry-days-since-creation-with-date-added ()
-  "DATE_ADDED set → returns days since that date."
+  "DATE_ADDED set → returns days since that date.
+Fixture date is relative to today so the assertion stays exact whenever
+the test runs; the timestamp branch reads the real clock via
+`org-time-stamp-to-now' and a `current-time' rebind wouldn't reach it."
   (with-org-buffer "* Question :drill:\n"
-    (org-set-property "DATE_ADDED" "<2026-04-01 Wed>")
-    (with-fixed-now
-      (let ((days (org-drill-entry-days-since-creation (org-drill-session))))
-        (should (numberp days))
-        (should (>= days 33))    ; ~34 days from 4-01 to 5-05
-        (should (<= days 35))))))
+    (let* ((days-ago 34)
+           (now (decode-time))
+           (added (encode-time 0 0 12
+                               (- (nth 3 now) days-ago)
+                               (nth 4 now)
+                               (nth 5 now))))
+      (org-set-property "DATE_ADDED" (format-time-string "<%Y-%m-%d %a>" added))
+      (should (= days-ago
+                 (org-drill-entry-days-since-creation (org-drill-session)))))))
 
 (ert-deftest test-org-drill-entry-days-since-creation-no-date-no-flag-returns-nil ()
   "DATE_ADDED missing, USE-LAST-INTERVAL-P nil → returns nil."
