@@ -194,26 +194,27 @@ warned-about-id-creation slot flips to t and a fresh ID is returned."
         (org-drill-id-get-create-with-warning session)
         (should (oref session warned-about-id-creation))))))
 
-;;;; org-drill-add-cloze-fontification
+;;;; org-drill-mode (cloze fontification)
 
-(ert-deftest test-org-drill-add-cloze-fontification-sets-buffer-local-regex ()
-  "Sets buffer-local `org-drill-cloze-regexp' built from the current delimiters."
+(ert-deftest test-org-drill-mode-sets-buffer-local-regex ()
+  "Enabling `org-drill-mode' sets buffer-local `org-drill-cloze-regexp' built
+from the current delimiters."
   (with-temp-buffer
     (let ((org-startup-folded nil))
       (org-mode)
       (let ((org-drill-left-cloze-delimiter "{{")
             (org-drill-right-cloze-delimiter "}}"))
-        (org-drill-add-cloze-fontification)
+        (org-drill-mode 1)
         (should (local-variable-p 'org-drill-cloze-regexp))
         ;; The buffer-local regex matches the new delimiters.
         (should (string-match-p org-drill-cloze-regexp "test {{x}} more"))
         (should-not (string-match-p org-drill-cloze-regexp "test [x] more"))))))
 
-(ert-deftest test-org-drill-add-cloze-fontification-sets-buffer-local-keywords ()
+(ert-deftest test-org-drill-mode-sets-buffer-local-keywords ()
   (with-temp-buffer
     (let ((org-startup-folded nil))
       (org-mode)
-      (org-drill-add-cloze-fontification)
+      (org-drill-mode 1)
       (should (local-variable-p 'org-drill-cloze-keywords))
       (should (listp org-drill-cloze-keywords)))))
 

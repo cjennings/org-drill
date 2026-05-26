@@ -105,24 +105,24 @@ read and re-activates it on the way out."
     (should hook-ran)
     (should key-read)))
 
-;;;; org-drill-add-cloze-fontification
+;;;; org-drill-mode cloze-face flag branches
 
-(ert-deftest test-add-cloze-fontification-with-flag-extends-keywords ()
-  "When `org-drill-use-visible-cloze-face-p' is t, the cloze keyword spec is
-added to `org-font-lock-extra-keywords'."
+(ert-deftest test-org-drill-mode-with-flag-installs-cloze-keywords ()
+  "When `org-drill-use-visible-cloze-face-p' is t, enabling `org-drill-mode'
+installs the cloze keyword spec buffer-locally."
   (with-temp-buffer
-    (let ((org-drill-use-visible-cloze-face-p t)
-          (org-font-lock-extra-keywords nil))
-      (org-drill-add-cloze-fontification)
-      (should org-font-lock-extra-keywords))))
+    (org-mode)
+    (let ((org-drill-use-visible-cloze-face-p t))
+      (org-drill-mode 1)
+      (should org-drill--installed-cloze-keywords))))
 
-(ert-deftest test-add-cloze-fontification-without-flag-leaves-keywords-untouched ()
-  "When the flag is nil, no entry is added to `org-font-lock-extra-keywords'."
+(ert-deftest test-org-drill-mode-without-flag-installs-nothing ()
+  "When the flag is nil, enabling `org-drill-mode' installs no cloze keywords."
   (with-temp-buffer
-    (let ((org-drill-use-visible-cloze-face-p nil)
-          (org-font-lock-extra-keywords nil))
-      (org-drill-add-cloze-fontification)
-      (should (null org-font-lock-extra-keywords)))))
+    (org-mode)
+    (let ((org-drill-use-visible-cloze-face-p nil))
+      (org-drill-mode 1)
+      (should (null org-drill--installed-cloze-keywords)))))
 
 (provide 'test-org-drill-small-branch-coverage)
 ;;; test-org-drill-small-branch-coverage.el ends here

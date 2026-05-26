@@ -82,6 +82,9 @@ Returns the version string so it is useful in non-interactive code too."
   :group 'org-drill
   :type 'string)
 
+(defvar org-drill-leitner-tag "leitner"
+  "Tag marking entries reviewed via the Leitner box system.")
+
 (defcustom org-drill-maximum-items-per-session
   30
   "Each drill session will present at most this many topics for review.
@@ -175,6 +178,14 @@ Possible values:
   :group 'org-drill
   :type 'boolean)
 
+(defcustom org-drill-auto-enable-mode t
+  "When non-nil, enable `org-drill-mode' automatically in Org buffers that
+contain drill cards — headings tagged with `org-drill-question-tag' or
+`org-drill-leitner-tag'.  This scopes cloze fontification to buffers that
+actually hold cards instead of installing it in every Org buffer."
+  :group 'org-drill
+  :type 'boolean)
+
 (defcustom org-drill-hide-item-headings-p
   nil
   "If non-nil, conceal headings during a drill session.
@@ -236,8 +247,6 @@ Mature items are due for review, but are not new."
           '(display "Replaced text"
                     face default
                     window t))
-
-(add-hook 'org-font-lock-set-keywords-hook 'org-drill-add-cloze-fontification)
 
 (defvar org-drill-hint-separator "||"
   "Delimiter in cloze expression for hints.")
@@ -3353,14 +3362,70 @@ values as `org-drill-scope'."
     (message "Done.")))
 
 
-(defun org-drill-add-cloze-fontification ()
-  ;; Compute local versions of the regexp for cloze deletions, in case
-  ;; the left and right delimiters are redefined locally.
+(defvar-local org-drill--installed-cloze-keywords nil
+  "The exact cloze font-lock keyword list installed by `org-drill-mode' in
+this buffer, kept so the mode can remove precisely what it added.")
+
+(define-minor-mode org-drill-mode
+  "Minor mode that highlights cloze deletions in the current buffer.
+
+Enabling the mode adds cloze fontification to this buffer only, so the
+highlighting does not leak into unrelated Org buffers.  That scoping also
+prevents Org priority cookies such as `[#A]' — which match the cloze
+`[...]' pattern — from being fontified as clozes in non-drill buffers.
+
+The mode controls only the persistent display of clozes in the source
+buffer.  Running drill sessions (`org-drill', `org-drill-cram', etc.) does
+not depend on it.
+
+Highlighting is applied only when `org-drill-use-visible-cloze-face-p' is
+non-nil; otherwise the mode is a no-op for fontification."
+  :lighter " Drill"
+  :group 'org-drill
+  ;; Recompute the buffer-local cloze regexp/keywords in case the cloze
+  ;; delimiters were redefined locally.
   (setq-local org-drill-cloze-regexp (org-drill--compute-cloze-regexp))
   (setq-local org-drill-cloze-keywords (org-drill--compute-cloze-keywords))
-  (when org-drill-use-visible-cloze-face-p
-    (add-to-list 'org-font-lock-extra-keywords
-                 (cl-first org-drill-cloze-keywords))))
+  ;; Remove any previously-installed keywords first so repeated toggles
+  ;; don't stack duplicates.
+  (when org-drill--installed-cloze-keywords
+    (font-lock-remove-keywords nil org-drill--installed-cloze-keywords)
+    (setq org-drill--installed-cloze-keywords nil))
+  (when (and org-drill-mode org-drill-use-visible-cloze-face-p)
+    (setq org-drill--installed-cloze-keywords org-drill-cloze-keywords)
+    (font-lock-add-keywords nil org-drill--installed-cloze-keywords 'append))
+  (when font-lock-mode
+    (save-restriction
+      (widen)
+      (font-lock-flush)
+      (font-lock-ensure))))
+
+(defun org-drill-buffer-has-cards-p ()
+  "Return non-nil if the current buffer contains a drill card — a heading
+tagged with `org-drill-question-tag' or `org-drill-leitner-tag'."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (let ((case-fold-search t))
+        (re-search-forward
+         (concat "^\\*+ .*:\\(?:"
+                 (regexp-quote org-drill-question-tag)
+                 "\\|"
+                 (regexp-quote org-drill-leitner-tag)
+                 "\\):")
+         nil t)))))
+
+(defun org-drill-maybe-enable-mode ()
+  "Enable `org-drill-mode' when appropriate for the current buffer.
+Intended for `org-mode-hook': turns the mode on when
+`org-drill-auto-enable-mode' is non-nil and the buffer holds drill cards."
+  (when (and org-drill-auto-enable-mode
+             (derived-mode-p 'org-mode)
+             (org-drill-buffer-has-cards-p))
+    (org-drill-mode 1)))
+
+(add-hook 'org-mode-hook #'org-drill-maybe-enable-mode)
 
 
 ;;; Synching card collections =================================================
@@ -3799,8 +3864,6 @@ Returns a list of strings."
 
 (defvar org-drill-leitner-completed 0
   "The number of entries that have been completed this time.")
-
-(defvar org-drill-leitner-tag "leitner")
 
 (defun org-drill-sm-or-leitner ()
   (interactive)
