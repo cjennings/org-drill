@@ -154,6 +154,25 @@
          (lambda (_) (setq reschedule-called t))))
       (should reschedule-called))))
 
+;;;; org-drill--format-tense-mood
+
+(ert-deftest test-org-drill-format-tense-mood-both ()
+  "With both tense and mood, the label names both."
+  (should (equal "past tense, subjunctive mood"
+                 (org-drill--format-tense-mood "past" "subjunctive"))))
+
+(ert-deftest test-org-drill-format-tense-mood-tense-only ()
+  "With only a tense, the label names the tense."
+  (should (equal "present tense" (org-drill--format-tense-mood "present" nil))))
+
+(ert-deftest test-org-drill-format-tense-mood-mood-only ()
+  "With only a mood, the label names the mood."
+  (should (equal "imperative mood" (org-drill--format-tense-mood nil "imperative"))))
+
+(ert-deftest test-org-drill-format-tense-mood-neither-is-nil ()
+  "With neither tense nor mood, there is no label."
+  (should (null (org-drill--format-tense-mood nil nil))))
+
 (provide 'test-org-drill-language-presenters)
 
 ;;; test-org-drill-language-presenters.el ends here

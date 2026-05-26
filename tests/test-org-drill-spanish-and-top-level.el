@@ -88,6 +88,48 @@ hablo, hablas, ...
         (org-drill-present-spanish-verb (org-drill-session))
         (should (string-match-p "future perfect" shown-prompt))))))
 
+(ert-deftest test-present-spanish-verb-branch-1-present-tense-conjugate ()
+  "Branch 1 reveals the English side and asks to conjugate the present tense."
+  (with-card-buffer "* Verb :drill:\n** Infinitive\nhablar\n** English\nto speak\n** Present Tense\nfoo\n"
+    (let ((shown-prompt nil))
+      (cl-letf (((symbol-function 'cl-random) (lambda (_) 1))
+                ((symbol-function 'org-drill-presentation-prompt)
+                 (lambda (_session &optional prompt &rest _)
+                   (setq shown-prompt prompt) t))
+                ((symbol-function 'org-drill--show-latex-fragments) #'ignore)
+                ((symbol-function 'org-display-inline-images) #'ignore))
+        (org-drill-present-spanish-verb (org-drill-session))
+        (should (string-match-p "present.* tense" shown-prompt))
+        (should (string-match-p "English verb" shown-prompt))))))
+
+(ert-deftest test-present-spanish-verb-branch-3-past-tense-conjugate ()
+  "Branch 3 reveals the English side and asks to conjugate the past tense."
+  (with-card-buffer "* Verb :drill:\n** Infinitive\nhablar\n** English\nto speak\n** Past Tense\nfoo\n"
+    (let ((shown-prompt nil))
+      (cl-letf (((symbol-function 'cl-random) (lambda (_) 3))
+                ((symbol-function 'org-drill-presentation-prompt)
+                 (lambda (_session &optional prompt &rest _)
+                   (setq shown-prompt prompt) t))
+                ((symbol-function 'org-drill--show-latex-fragments) #'ignore)
+                ((symbol-function 'org-display-inline-images) #'ignore))
+        (org-drill-present-spanish-verb (org-drill-session))
+        (should (string-match-p "past.* tense" shown-prompt))
+        (should (string-match-p "English verb" shown-prompt))))))
+
+(ert-deftest test-present-spanish-verb-branch-5-future-perfect-conjugate ()
+  "Branch 5 reveals the English side and asks to conjugate the future perfect."
+  (with-card-buffer "* Verb :drill:\n** Infinitive\nhablar\n** English\nto speak\n** Future Perfect Tense\nfoo\n"
+    (let ((shown-prompt nil))
+      (cl-letf (((symbol-function 'cl-random) (lambda (_) 5))
+                ((symbol-function 'org-drill-presentation-prompt)
+                 (lambda (_session &optional prompt &rest _)
+                   (setq shown-prompt prompt) t))
+                ((symbol-function 'org-drill--show-latex-fragments) #'ignore)
+                ((symbol-function 'org-display-inline-images) #'ignore))
+        (org-drill-present-spanish-verb (org-drill-session))
+        (should (string-match-p "future perfect" shown-prompt))
+        (should (string-match-p "English verb" shown-prompt))))))
+
 ;;;; org-drill-cram and friends
 
 (ert-deftest test-org-drill-cram-passes-cram-flag ()

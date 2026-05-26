@@ -64,6 +64,18 @@
   :tag "Org-Drill"
   :group 'org-link)
 
+(defconst org-drill-version "2.7.0"
+  "Version of the org-drill package.
+Keep this in sync with the Version header at the top of this file.")
+
+;;;###autoload
+(defun org-drill-version ()
+  "Report the installed org-drill version in the echo area.
+Returns the version string so it is useful in non-interactive code too."
+  (interactive)
+  (message "org-drill %s" org-drill-version)
+  org-drill-version)
+
 (defcustom org-drill-question-tag
   "drill"
   "Tag for topics which are review topics."
@@ -1271,6 +1283,10 @@ Returns a list:
 
 Returns the optimal FIRST interval for an item which has previously been
 forgotten on FAILURES occasions."
+  ;; SM8 first-interval model.  An item never forgotten gets ~2.4849 days;
+  ;; each prior failure shrinks that by a factor of e^-0.057 (~5.5% per
+  ;; failure).  Both constants are the empirical fit from the SM8 algorithm
+  ;; and are not meant to be tuned individually.
   (* 2.4849 (exp (* -0.057 failures))))
 
 (defun org-drill-simple8-interval-factor (ease repetition)
@@ -1281,11 +1297,19 @@ forgotten on FAILURES occasions."
 Returns:
 The factor by which the last interval should be
 multiplied to give the next interval. Corresponds to `RF' or `OF'."
+  ;; 1.2 is the SM8 floor for the interval factor: it never drops below 1.2,
+  ;; so intervals always grow.  The amount above the floor decays as
+  ;; learn-fraction raised to log2(repetition), pulling later repetitions
+  ;; toward the floor.
   (+ 1.2 (* (- ease 1.2) (expt org-drill-learn-fraction (log repetition 2)))))
 
 (defun org-drill-simple8-quality->ease (quality)
   "Returns the ease (`AF' in the SM8 algorithm) which corresponds
 to a mean item quality of QUALITY."
+  ;; Quality (0-5 mean recall score) maps to ease/AF through this 4th-degree
+  ;; polynomial, a least-squares fit carried over from the SM8 algorithm.
+  ;; The five coefficients are empirical and only meaningful together, so
+  ;; treat them as one fitted curve rather than independent knobs.
   (+ (* 0.0542 (expt quality 4))
      (* -0.4848 (expt quality 3))
      (* 1.4916 (expt quality 2))
@@ -3142,6 +3166,7 @@ and optionally saves buffers."
     (sit-for 1)
     (message nil))))
 
+;;;###autoload
 (defun org-drill (&optional scope drill-match resume-p cram)
   "Begin an interactive \\='drill session\\='. The user is asked to
 review a series of topics (headers). Each topic is initially
@@ -3223,6 +3248,7 @@ hours."
   (interactive)
   (org-drill scope drill-match nil t))
 
+;;;###autoload
 (defun org-drill-cram-tree ()
   "Run  an interactive drill session in \\='cram mode\\=' using subtree at point.
 
@@ -3230,12 +3256,14 @@ See also, `org-drill-cram' and `org-drill-tree'."
   (interactive)
   (org-drill-cram 'tree))
 
+;;;###autoload
 (defun org-drill-tree ()
   "Run an interactive drill session using drill items within the
 subtree at point."
   (interactive)
   (org-drill 'tree))
 
+;;;###autoload
 (defun org-drill-directory ()
   "Run an interactive drill session using drill items from all org
 files in the same directory as the current file."
@@ -3265,6 +3293,7 @@ scan will be performed."
      (t
       (org-drill scope drill-match)))))
 
+;;;###autoload
 (defun org-drill-resume ()
   "Resume a suspended drill session. Sessions are suspended by
 exiting them with the `edit' or `quit' options."
@@ -3287,6 +3316,7 @@ need reviewing.  Start a new drill session? "
       (message "You have finished the drill session.")))))
 
 
+;;;###autoload
 (defun org-drill-relearn-item ()
   "Make the current item due for revision, and set its last interval to 0.
 Makes the item behave as if it has been failed, without actually recording a
@@ -3301,6 +3331,7 @@ failure. This command can be used to \\='reset\\=' repetitions for an item."
   (org-schedule '(4)))
 
 
+;;;###autoload
 (defun org-drill-strip-all-data (&optional scope)
   "Delete scheduling data from every drill entry in scope. This
 function may be useful if you want to give your collection of
@@ -3450,6 +3481,7 @@ deck owner is opting in to a clean migration."
              (set-marker m nil))
            org-drill-dest-id-table))
 
+;;;###autoload
 (defun org-drill-merge-buffers (src &optional dest ignore-new-items-p)
   "SRC and DEST are two org mode buffers containing drill items.
 For each drill item in DEST that shares an ID with an item in SRC,
@@ -3543,32 +3575,34 @@ the name of the tense.")
     (if mood (setq mood (propertize mood 'face highlight-face)))
     (list infinitive inf-hint translation tense mood)))
 
+(defun org-drill--format-tense-mood (tense mood)
+  "Return a human-readable label for a verb's TENSE and MOOD.
+Either argument may be nil.  Returns nil when both are nil."
+  (cond
+   ((and tense mood)
+    (format "%s tense, %s mood" tense mood))
+   (tense
+    (format "%s tense" tense))
+   (mood
+    (format "%s mood" mood))))
+
 (defun org-drill-present-verb-conjugation (session)
   "Present a drill entry whose card type is \\='conjugate\\='."
-  (cl-flet ((tense-and-mood-to-string
-             (tense mood)
-             (cond
-              ((and tense mood)
-               (format "%s tense, %s mood" tense mood))
-              (tense
-               (format "%s tense" tense))
-              (mood
-               (format "%s mood" mood)))))
-    (cl-destructuring-bind (infinitive inf-hint translation tense mood)
-        (org-drill-get-verb-conjugation-info)
-      (org-drill-present-card-using-text
-       session
-       (cond
-        ((zerop (cl-random 2))
-         (format "\nTranslate the verb\n\n%s\n\nand conjugate for the %s.\n\n"
-                 infinitive (tense-and-mood-to-string tense mood)))
+  (cl-destructuring-bind (infinitive inf-hint translation tense mood)
+      (org-drill-get-verb-conjugation-info)
+    (org-drill-present-card-using-text
+     session
+     (cond
+      ((zerop (cl-random 2))
+       (format "\nTranslate the verb\n\n%s\n\nand conjugate for the %s.\n\n"
+               infinitive (org-drill--format-tense-mood tense mood)))
 
-        (t
-         (format "\nGive the verb that means\n\n%s %s\n
+      (t
+       (format "\nGive the verb that means\n\n%s %s\n
 and conjugate for the %s.\n\n"
-                 translation
-                 (if inf-hint (format "  [HINT: %s]" inf-hint) "")
-                 (tense-and-mood-to-string tense mood))))))))
+               translation
+               (if inf-hint (format "  [HINT: %s]" inf-hint) "")
+               (org-drill--format-tense-mood tense mood)))))))
 
 (defun org-drill-show-answer-verb-conjugation (session reschedule-fn)
  "Show the answer for a drill item whose card type is \\='conjugate\\='.
@@ -3578,14 +3612,7 @@ returns its return value."
       (org-drill-get-verb-conjugation-info)
     (org-drill-with-replaced-entry-heading
      (format "%s of %s ==> %s\n\n"
-             (capitalize
-              (cond
-               ((and tense mood)
-                (format "%s tense, %s mood" tense mood))
-               (tense
-                (format "%s tense" tense))
-               (mood
-                (format "%s mood" mood))))
+             (capitalize (org-drill--format-tense-mood tense mood))
              infinitive translation)
      (org-drill-hide-drawers)
      (funcall reschedule-fn session))))
@@ -3852,12 +3879,16 @@ Returns a list of strings."
     (setf (elt LIST el2) tmp)))
 
 (defun org-drill-shuffle (LIST)
-  "Shuffle the elements in LIST.
-shuffling is done in place."
-  (cl-loop for i in (reverse (number-sequence 1 (1- (length LIST))))
-        do (let ((j (random (+ i 1))))
-             (org-drill-swap LIST i j)))
-  LIST)
+  "Return a random permutation of the elements in LIST.
+The shuffle runs over a temporary vector with a Fisher-Yates pass,
+so the cost is linear in the length of LIST rather than quadratic
+\(the previous version indexed a list with `elt' on every swap)."
+  (cl-check-type LIST list)
+  (let ((vec (vconcat LIST)))
+    (cl-loop for i from (1- (length vec)) downto 1
+             do (let ((j (random (1+ i))))
+                  (cl-rotatef (aref vec i) (aref vec j))))
+    (append vec nil)))
 
 (defun org-drill-leitner-start-box (number)
   "Box some items for the first time."

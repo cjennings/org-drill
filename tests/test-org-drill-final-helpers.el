@@ -111,8 +111,8 @@ matches leitner-tagged entries)."
         (should (null org-drill-leitner-boxed-entries))
         (should (null org-drill-leitner-unboxed-entries))))))
 
-(ert-deftest test-map-leitner-capture-non-drill-entry-skipped ()
-  "Non-drill entries (no :drill: tag inheritance) are skipped silently."
+(ert-deftest test-map-leitner-capture-untagged-heading-skipped ()
+  "A heading carrying no drill/leitner tag is skipped silently."
   (with-org-buffer "* Plain heading\n"
     (let ((session (org-drill-session))
           (org-drill-leitner-boxed-entries nil)

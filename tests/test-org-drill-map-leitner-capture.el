@@ -60,8 +60,8 @@
       (should (= 0 (length org-drill-leitner-boxed-entries)))
       (should (= 0 (length org-drill-leitner-unboxed-entries))))))
 
-(ert-deftest test-map-leitner-capture-non-drill-entry-skipped ()
-  "Non-drill heading is skipped entirely."
+(ert-deftest test-map-leitner-capture-no-headline-skipped ()
+  "A buffer with no headline at all is skipped entirely."
   (with-leitner-tempfile "Just text, no headlines\n"
     (let ((session (org-drill-session))
           (org-drill-question-tag org-drill-leitner-tag))

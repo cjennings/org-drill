@@ -138,6 +138,68 @@ piece is guaranteed not to be the first)."
                (args (cdr call)))
           (should (eq -1 (nth 1 args))))))))
 
+;;;; Basic variants — delegation contract
+;;
+;; hide1/hide2/hide-first/hide-last are thin wrappers.  The hiding
+;; mechanics they delegate to (hide-n / hide-nth) are exercised directly
+;; in test-org-drill-multicloze-hiding.el, so re-driving present-and-reveal
+;; here would just re-test those.  What's untested is the wiring: which
+;; delegate each variant calls and with what argument.
+
+(ert-deftest test-multicloze-hide1-delegates-to-hide-n-1 ()
+  "hide1 hides one piece: delegates to hide-n with number-to-hide = 1."
+  (with-fresh-drill-entry
+    (let (recorded)
+      (cl-letf (((symbol-function 'org-drill-present-multicloze-hide-n)
+                 (lambda (_session n &rest _) (setq recorded n) t)))
+        (org-drill-present-multicloze-hide1 (org-drill-session))
+        (should (eql 1 recorded))))))
+
+(ert-deftest test-multicloze-hide2-delegates-to-hide-n-2 ()
+  "hide2 hides two pieces: delegates to hide-n with number-to-hide = 2."
+  (with-fresh-drill-entry
+    (let (recorded)
+      (cl-letf (((symbol-function 'org-drill-present-multicloze-hide-n)
+                 (lambda (_session n &rest _) (setq recorded n) t)))
+        (org-drill-present-multicloze-hide2 (org-drill-session))
+        (should (eql 2 recorded))))))
+
+(ert-deftest test-multicloze-hide-first-delegates-to-hide-nth-1 ()
+  "hide-first hides the first piece: delegates to hide-nth with 1."
+  (with-fresh-drill-entry
+    (let (recorded)
+      (cl-letf (((symbol-function 'org-drill-present-multicloze-hide-nth)
+                 (lambda (_session nth &rest _) (setq recorded nth) t)))
+        (org-drill-present-multicloze-hide-first (org-drill-session))
+        (should (eql 1 recorded))))))
+
+(ert-deftest test-multicloze-hide-last-delegates-to-hide-nth-last ()
+  "hide-last hides the last piece: delegates to hide-nth with -1."
+  (with-fresh-drill-entry
+    (let (recorded)
+      (cl-letf (((symbol-function 'org-drill-present-multicloze-hide-nth)
+                 (lambda (_session nth &rest _) (setq recorded nth) t)))
+        (org-drill-present-multicloze-hide-last (org-drill-session))
+        (should (eql -1 recorded))))))
+
+(ert-deftest test-multicloze-show1-delegates-to-hide-n-minus-1 ()
+  "show1 reveals one piece (hides the rest): delegates to hide-n with -1."
+  (with-fresh-drill-entry
+    (let (recorded)
+      (cl-letf (((symbol-function 'org-drill-present-multicloze-hide-n)
+                 (lambda (_session n &rest _) (setq recorded n) t)))
+        (org-drill-present-multicloze-show1 (org-drill-session))
+        (should (eql -1 recorded))))))
+
+(ert-deftest test-multicloze-show2-delegates-to-hide-n-minus-2 ()
+  "show2 reveals two pieces: delegates to hide-n with -2."
+  (with-fresh-drill-entry
+    (let (recorded)
+      (cl-letf (((symbol-function 'org-drill-present-multicloze-hide-n)
+                 (lambda (_session n &rest _) (setq recorded n) t)))
+        (org-drill-present-multicloze-show2 (org-drill-session))
+        (should (eql -2 recorded))))))
+
 (provide 'test-org-drill-multicloze-dispatch)
 
 ;;; test-org-drill-multicloze-dispatch.el ends here

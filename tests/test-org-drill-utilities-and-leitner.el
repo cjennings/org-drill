@@ -61,6 +61,12 @@
 (ert-deftest test-org-drill-shuffle-single-element-unchanged ()
   (should (equal '(42) (org-drill-shuffle (list 42)))))
 
+(ert-deftest test-org-drill-shuffle-rejects-non-list ()
+  "The argument must be a list.  A non-list (number, vector) is rejected
+with a clear type error rather than silently coerced."
+  (should-error (org-drill-shuffle 42) :type 'wrong-type-argument)
+  (should-error (org-drill-shuffle [1 2 3]) :type 'wrong-type-argument))
+
 ;;;; org-drill-pop-random (macro)
 
 (ert-deftest test-org-drill-pop-random-removes-one-element ()

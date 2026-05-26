@@ -417,5 +417,26 @@ Simulates inconsistent learning."
     (should (= interval-2 -1))
     (should (= failures-2 1))))
 
+;;; Error Cases - cl-assert invariant violations
+
+;; The function asserts (> n 0) and (and (>= quality 0) (<= quality 5)).
+;; n is normalized from 0 to 1 first, so only a negative n trips its assert.
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-error-quality-above-max ()
+  "Quality above the 0-5 range trips the quality assertion."
+  (should-error (org-drill-determine-next-interval-sm2 1 2 2.5 6 0 4.0 1)
+                :type 'cl-assertion-failed))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-error-quality-below-min ()
+  "Quality below the 0-5 range trips the quality assertion."
+  (should-error (org-drill-determine-next-interval-sm2 1 2 2.5 -1 0 4.0 1)
+                :type 'cl-assertion-failed))
+
+(ert-deftest test-org-drill-determine-next-interval-sm2-error-negative-n ()
+  "A negative repeat count trips the (> n 0) assertion.  Note n=0 is
+normalized to 1 before the assert, so zero is not an error case."
+  (should-error (org-drill-determine-next-interval-sm2 1 -1 2.5 4 0 4.0 1)
+                :type 'cl-assertion-failed))
+
 (provide 'test-org-drill-determine-next-interval-sm2)
 ;;; test-org-drill-determine-next-interval-sm2.el ends here
