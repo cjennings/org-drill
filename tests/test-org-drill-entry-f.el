@@ -97,6 +97,48 @@ the complete-func (e.g., reschedule) is invoked with the session."
                            (lambda (_) (setq complete-called t)))
         (should complete-called)))))
 
+;;;; org-drill--resolve-presenter
+
+(ert-deftest test-org-drill-resolve-presenter-bare-symbol ()
+  "A bare presenter symbol pairs with the default answer function."
+  (let ((org-drill-card-type-alist '(("simple" . my-present))))
+    (should (equal '(my-present . org-drill-present-default-answer)
+                   (org-drill--resolve-presenter "simple")))))
+
+(ert-deftest test-org-drill-resolve-presenter-list-with-answer ()
+  "A list entry uses its first element as presenter and second as answer."
+  (let ((org-drill-card-type-alist '(("two" my-present my-answer))))
+    (should (equal '(my-present . my-answer)
+                   (org-drill--resolve-presenter "two")))))
+
+(ert-deftest test-org-drill-resolve-presenter-list-without-answer ()
+  "A single-element list entry falls back to the default answer function."
+  (let ((org-drill-card-type-alist '(("one" my-present))))
+    (should (equal '(my-present . org-drill-present-default-answer)
+                   (org-drill--resolve-presenter "one")))))
+
+(ert-deftest test-org-drill-resolve-presenter-unknown-is-nil ()
+  "An unknown card type resolves to a nil presenter (which entry-f skips)."
+  (let ((org-drill-card-type-alist '(("simple" . my-present))))
+    (should (equal '(nil . org-drill-present-default-answer)
+                   (org-drill--resolve-presenter "no-such-type")))))
+
+;;;; org-drill--classify-presentation-result
+
+(ert-deftest test-org-drill-classify-result-nil-is-quit ()
+  (should (eq 'quit (org-drill--classify-presentation-result nil))))
+
+(ert-deftest test-org-drill-classify-result-edit ()
+  (should (eq 'edit (org-drill--classify-presentation-result 'edit))))
+
+(ert-deftest test-org-drill-classify-result-skip ()
+  (should (eq 'skip (org-drill--classify-presentation-result 'skip))))
+
+(ert-deftest test-org-drill-classify-result-other-is-answer ()
+  "Any other non-nil value means proceed to the answer."
+  (should (eq 'answer (org-drill--classify-presentation-result t)))
+  (should (eq 'answer (org-drill--classify-presentation-result 5))))
+
 (provide 'test-org-drill-entry-f)
 
 ;;; test-org-drill-entry-f.el ends here

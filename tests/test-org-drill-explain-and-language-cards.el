@@ -171,6 +171,34 @@ on whether the buffer ends with a newline."
            (face (get-text-property 0 'face (nth 0 info))))
       (should (equal "red" (plist-get face :foreground))))))
 
+;;;; org-drill--read-property-string
+
+(ert-deftest test-org-drill-read-property-string-strips-one-read ()
+  "A Lisp-readable property string is read down to its datum."
+  (should (equal "hablar" (org-drill--read-property-string "\"hablar\""))))
+
+(ert-deftest test-org-drill-read-property-string-nil-is-nil ()
+  "A nil property (absent) returns nil rather than erroring."
+  (should (null (org-drill--read-property-string nil))))
+
+;;;; org-drill--face-from-alist
+
+(ert-deftest test-org-drill-face-from-alist-hit-returns-colour ()
+  "A key present in the alist returns its mapped colour."
+  (should (equal "tomato"
+                 (org-drill--face-from-alist "present" org-drill-verb-tense-alist "x"))))
+
+(ert-deftest test-org-drill-face-from-alist-is-case-insensitive ()
+  "Lookup ignores case, matching the assoc-string call sites."
+  (should (equal "tomato"
+                 (org-drill--face-from-alist "PRESENT" org-drill-verb-tense-alist "x"))))
+
+(ert-deftest test-org-drill-face-from-alist-miss-returns-default ()
+  "A key absent from the alist falls back to the supplied default."
+  (should (equal "fallback"
+                 (org-drill--face-from-alist "no-such-tense"
+                                             org-drill-verb-tense-alist "fallback"))))
+
 (provide 'test-org-drill-explain-and-language-cards)
 
 ;;; test-org-drill-explain-and-language-cards.el ends here

@@ -158,6 +158,24 @@ Verified by checking the resulting overlay's bounds match the
      (org-drill-present-multicloze-hide-nth (org-drill-session) -1))
     (should (= 1 overlays-during-prompt))))
 
+;;;; org-drill--count-cloze-matches (extracted scan helper)
+
+(ert-deftest test-org-drill-count-cloze-matches-counts-body-clozes ()
+  "Counts each cloze region between the body bounds."
+  (with-cloze-card "* Question :drill:
+[A] [B] [C] [D]
+"
+    (let ((bounds (org-drill--cloze-body-bounds)))
+      (should (= 4 (org-drill--count-cloze-matches (car bounds) (cdr bounds)))))))
+
+(ert-deftest test-org-drill-count-cloze-matches-zero-when-no-cloze ()
+  "A body with no cloze syntax counts zero."
+  (with-cloze-card "* Question :drill:
+No cloze syntax here.
+"
+    (let ((bounds (org-drill--cloze-body-bounds)))
+      (should (= 0 (org-drill--count-cloze-matches (car bounds) (cdr bounds)))))))
+
 (provide 'test-org-drill-multicloze-hiding)
 
 ;;; test-org-drill-multicloze-hiding.el ends here
