@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# emacs-eask/setup-eask@master still declares the node20 runtime, which
+# GitHub force-migrates to node24 on 2026-06-02.  Opt in now so the
+# action runs under node24 ahead of the forced switch — surfacing any
+# incompatibility on our schedule rather than theirs.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Test (Emacs ${{ matrix.emacs-version }})
@@ -18,13 +25,13 @@ jobs:
           # declared dep) built-in.  Earlier versions need Cask to
           # pull a newer Org over the built-in, which has been
           # unreliable in CI.  Tests pass locally on 30.x and on
-          # the snapshot runner; eight scheduler error-case tests
-          # are skipped on 29 due to an ERT signal-hook quirk
-          # (skip-unless guard inside the helper macro).
+          # the snapshot runner; the scheduler cl-assert error-case
+          # tests (sm2/sm5/simple8) are skipped on 29 due to an ERT
+          # signal-hook quirk (skip-unless guard inside the helper macro).
           - '29.4'
           - 'snapshot'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Emacs
         uses: jcs090218/setup-emacs@master
@@ -55,7 +62,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Emacs
         uses: jcs090218/setup-emacs@master
@@ -94,7 +101,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Emacs
         uses: jcs090218/setup-emacs@master
