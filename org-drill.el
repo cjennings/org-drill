@@ -307,18 +307,42 @@ This is buffer-local variable.")
 
 This is a buffer-local variable.")
 
-;; Variables defining what keys can be pressed during drill sessions to quit the
-;; session, edit the item, etc.
-(defvar org-drill--quit-key ?q
-  "Character to quit the session.")
-(defvar org-drill--edit-key ?e
-  "Character to suspend the session.")
-(defvar org-drill--help-key ??
-  "Character to show help.")
-(defvar org-drill--skip-key ?s
-  "Character to skip to the next item.")
-(defvar org-drill--tags-key ?t
-  "Character to edit the tags.")
+;; Keys pressed during a drill session to quit, edit the item, etc.
+;; These are defcustoms so they can be rebound from customize-group.
+(defcustom org-drill--quit-key ?q
+  "Character to quit the session."
+  :group 'org-drill-session
+  :type 'character)
+(defcustom org-drill--edit-key ?e
+  "Character to suspend the session."
+  :group 'org-drill-session
+  :type 'character)
+(defcustom org-drill--help-key ??
+  "Character to show help."
+  :group 'org-drill-session
+  :type 'character)
+(defcustom org-drill--skip-key ?s
+  "Character to skip to the next item."
+  :group 'org-drill-session
+  :type 'character)
+(defcustom org-drill--tags-key ?t
+  "Character to edit the tags."
+  :group 'org-drill-session
+  :type 'character)
+(defcustom org-drill--undo-key ?u
+  "Character to undo the most recent rating during a session.
+Pressing it at the rating prompt restores the previous card's
+scheduling data and re-queues that card (see `org-drill-undo-last-rating')."
+  :group 'org-drill-session
+  :type 'character)
+
+(defcustom org-drill-undo-limit
+  3
+  "How many recent ratings can be undone with `org-drill--undo-key'.
+Each rating snapshots the card's scheduling state; only this many of the
+most recent snapshots are kept."
+  :group 'org-drill-session
+  :type 'integer)
 
 (defcustom org-drill-card-type-alist
   '((nil org-drill-present-simple-card)
@@ -667,6 +691,10 @@ interval was greater than ORG-DRILL-DAYS-BEFORE-OLD days.")
    (failed-entries :initform nil)
    (again-entries :initform nil)
    (done-entries :initform nil)
+   (undo-stack
+    :initform nil
+    :documentation "Stack of pre-rating scheduling snapshots, most recent
+first, used by `org-drill-undo-last-rating'.  Capped at `org-drill-undo-limit'.")
    (current-item
     :initform nil
     :documentation "Set to the marker for the item currently being tested.")
@@ -1563,14 +1591,16 @@ Shared by `org-drill-reschedule' and `org-drill-leitner-rebox'."
         (typed-answer-statement (if typed-answer
                                     (format "Your answer: %s\n" typed-answer)
                                   ""))
-        (key-prompt (format "(0-5, %c=help, %c=edit, %c=tags, %c=quit)"
+        (key-prompt (format "(0-5, %c=help, %c=edit, %c=tags, %c=undo, %c=quit)"
                             org-drill--help-key
                             org-drill--edit-key
                             org-drill--tags-key
+                            org-drill--undo-key
                             org-drill--quit-key)))
     (save-excursion
       (while (not (memq ch (list org-drill--quit-key
                                  org-drill--edit-key
+                                 org-drill--undo-key
                                  7          ; C-g
                                  ?0 ?1 ?2 ?3 ?4 ?5)))
         (run-hooks 'org-drill-display-answer-hook)
@@ -1602,6 +1632,55 @@ Shared by `org-drill-reschedule' and `org-drill-leitner-rebox'."
             (org-set-tags-command))))
     ch))
 
+(defun org-drill--snapshot-entry-data ()
+  "Capture the scheduling state of the entry at point for undo.
+Returns (MARKER . DATA), where MARKER points at the entry heading and
+DATA is an alist mapping each scheduling property (and the special
+`scheduled' key) to its current value, or nil when unset.  Restore it
+with `org-drill--restore-entry-data'."
+  (cons (save-excursion (org-back-to-heading t) (point-marker))
+        (cons (cons 'scheduled (org-entry-get (point) "SCHEDULED"))
+              (mapcar (lambda (prop)
+                        (cons prop (org-entry-get (point) prop)))
+                      org-drill-scheduling-properties))))
+
+(defun org-drill--restore-entry-data (snapshot)
+  "Restore the entry scheduling state captured in SNAPSHOT.
+A property absent at snapshot time is deleted; the SCHEDULED line is put
+back, or removed if there was none."
+  (org-with-point-at (car snapshot)
+    (dolist (cell (cdr snapshot))
+      (cond
+       ((eq (car cell) 'scheduled)
+        (if (cdr cell)
+            (org-schedule nil (cdr cell))
+          (org-schedule '(4))))
+       ((cdr cell)
+        (org-set-property (car cell) (cdr cell)))
+       (t
+        (org-delete-property (car cell)))))))
+
+(defun org-drill--push-undo-snapshot (session)
+  "Snapshot the entry at point onto SESSION's undo stack, capped at
+`org-drill-undo-limit'."
+  (push (org-drill--snapshot-entry-data) (oref session undo-stack))
+  (when (> (length (oref session undo-stack)) org-drill-undo-limit)
+    (setf (oref session undo-stack)
+          (cl-subseq (oref session undo-stack) 0 org-drill-undo-limit))))
+
+(defun org-drill-undo-last-rating (session)
+  "Undo the most recent rating in SESSION.
+Restore the card's pre-rating scheduling data, drop the recorded quality,
+and re-queue the card so it is presented again.  Does nothing when there
+is nothing to undo."
+  (let ((snapshot (pop (oref session undo-stack))))
+    (if (null snapshot)
+        (message "Nothing to undo")
+      (org-drill--restore-entry-data snapshot)
+      (pop (oref session qualities))
+      (push (car snapshot) (oref session again-entries))
+      (message "Undid the last rating; that card will come around again"))))
+
 (defun org-drill-reschedule (session)
   "Return qualityrating (0-5), or nil if the user quit."
   (let* ((next-review-dates (org-drill-hypothetical-next-review-dates))
@@ -1616,39 +1695,47 @@ Shared by `org-drill-reschedule' and `org-drill-leitner-rebox'."
 5 - You remembered the item really easily. (+%s days)"
                               (round (nth 3 next-review-dates))
                               (round (nth 4 next-review-dates))
-                              (round (nth 5 next-review-dates))))
-         (ch (org-drill--read-rating-key (oref session typed-answer)
-                                         rating-help)))
-    (cond
-     ((and (>= ch ?0) (<= ch ?5))
-      (let ((quality (- ch ?0))
-            (failures (org-drill-entry-failure-count)))
-        (unless (oref session cram-mode)
-          (save-excursion
-            (let ((quality (if (org-drill--entry-lapsed-p session) 2 quality)))
-              (org-drill-smart-reschedule quality
-                                          (nth quality next-review-dates))))
-          (push quality (oref session qualities))
+                              (round (nth 5 next-review-dates)))))
+    (cl-block org-drill-reschedule
+      ;; Loop so the undo key can take back the previous rating and then
+      ;; return us to the prompt for the current card.
+      (while t
+        (let ((ch (org-drill--read-rating-key (oref session typed-answer)
+                                              rating-help)))
           (cond
-           ((org-drill--quality-failed-p quality)
-            (when org-drill-leech-failure-threshold
-              (if (> (1+ failures) org-drill-leech-failure-threshold)
-                  (org-toggle-tag "leech" 'on))))
+           ((eql ch org-drill--undo-key)
+            (org-drill-undo-last-rating session))
+           ((and (>= ch ?0) (<= ch ?5))
+            (let ((quality (- ch ?0))
+                  (failures (org-drill-entry-failure-count)))
+              (unless (oref session cram-mode)
+                ;; Snapshot the pre-rating state so this rating can be undone.
+                (org-drill--push-undo-snapshot session)
+                (save-excursion
+                  (let ((quality (if (org-drill--entry-lapsed-p session) 2 quality)))
+                    (org-drill-smart-reschedule quality
+                                                (nth quality next-review-dates))))
+                (push quality (oref session qualities))
+                (cond
+                 ((org-drill--quality-failed-p quality)
+                  (when org-drill-leech-failure-threshold
+                    (if (> (1+ failures) org-drill-leech-failure-threshold)
+                        (org-toggle-tag "leech" 'on))))
+                 (t
+                  (let ((scheduled-time (org-get-scheduled-time (point))))
+                    (when scheduled-time
+                      (message "Next review in %d days"
+                               (- (time-to-days scheduled-time)
+                                  (time-to-days (current-time))))
+                      (sit-for 0.5)))))
+                (org-set-property "DRILL_LAST_QUALITY" (format "%d" quality))
+                (org-set-property "DRILL_LAST_REVIEWED"
+                                  (org-drill-time-to-inactive-org-timestamp (current-time))))
+              (cl-return-from org-drill-reschedule quality)))
+           ((eql ch org-drill--edit-key)
+            (cl-return-from org-drill-reschedule 'edit))
            (t
-            (let ((scheduled-time (org-get-scheduled-time (point))))
-              (when scheduled-time
-                (message "Next review in %d days"
-                         (- (time-to-days scheduled-time)
-                            (time-to-days (current-time))))
-                (sit-for 0.5)))))
-          (org-set-property "DRILL_LAST_QUALITY" (format "%d" quality))
-          (org-set-property "DRILL_LAST_REVIEWED"
-                            (org-drill-time-to-inactive-org-timestamp (current-time))))
-        quality))
-     ((= ch org-drill--edit-key)
-      'edit)
-     (t
-      nil))))
+            (cl-return-from org-drill-reschedule nil))))))))
 
 (defun org-drill-hide-subheadings-if (test)
   "TEST is a function taking no arguments. TEST will be called for each
@@ -2216,17 +2303,22 @@ Note: does not actually alter the item."
       (when (eql 'org-drill-cloze-overlay-defaults (overlay-get ovl 'category))
         (delete-overlay ovl)))))
 
+(defcustom org-drill-entry-text-max-lines
+  100
+  "Maximum number of lines of an entry's body text org-drill collects.
+Used by `org-drill-get-entry-text', for example when echoing the next
+Leitner item.  Raise it for decks with very long card bodies."
+  :group 'org-drill-session
+  :type 'integer)
+
 (defun org-drill-get-entry-text (&optional keep-properties-p)
   "Return the text of the current entry."
-  (let ((text (org-agenda-get-some-entry-text (point-marker) 100)))
+  (let ((text (org-agenda-get-some-entry-text
+               (point-marker) org-drill-entry-text-max-lines)))
     (if keep-properties-p
         text
       (substring-no-properties text))))
 
-;; (defun org-entry-empty-p ()
-;;   (zerop (length (org-drill-get-entry-text))))
-
-;; This version is about 5x faster than the old version, above.
 (defun org-drill-entry-empty-p ()
   "Return non-nil if the current entry is empty.
 
@@ -3162,6 +3254,7 @@ CRAM, if non-nil, starts the session in cram mode."
         (oref session old-mature-entries) nil
         (oref session failed-entries) nil
         (oref session again-entries) nil
+        (oref session undo-stack) nil
         (oref session start-time) (float-time (current-time))))
 
 (defun org-drill--collect-entries (session scope drill-match)
