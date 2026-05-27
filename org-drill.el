@@ -803,13 +803,13 @@ regardless of whether the test was successful.")
 ;;;; Utilities ================================================================
 (defmacro org-drill-pop-random (place)
   "Remove an item randomly from PLACE."
-  (let ((idx (cl-gensym)))
+  (let ((index-var (cl-gensym)))
     `(if (null ,place)
          nil
-       (let ((,idx (cl-random (length ,place))))
-         (prog1 (nth ,idx ,place)
-           (setf ,place (append (cl-subseq ,place 0 ,idx)
-                                (cl-subseq ,place (1+ ,idx)))))))))
+       (let ((,index-var (cl-random (length ,place))))
+         (prog1 (nth ,index-var ,place)
+           (setf ,place (append (cl-subseq ,place 0 ,index-var)
+                                (cl-subseq ,place (1+ ,index-var)))))))))
 
 (defmacro org-drill-push-end (val place)
   "Add VAL to the end of the sequence stored in PLACE. Return the new
@@ -1038,37 +1038,37 @@ The SESSION can affect the definition of overdue."
 
 (defun org-drill-entry-average-quality (&optional default)
   "Return the SM average quality for entry at point."
-  (let ((val (org-entry-get (point) "DRILL_AVERAGE_QUALITY")))
-    (if val
-        (string-to-number val)
+  (let ((raw-value (org-entry-get (point) "DRILL_AVERAGE_QUALITY")))
+    (if raw-value
+        (string-to-number raw-value)
       (or default nil))))
 
 (defun org-drill-entry-last-interval (&optional default)
   "Return the SM last interval for entry at point."
-  (let ((val (org-entry-get (point) "DRILL_LAST_INTERVAL")))
-    (if val
-        (string-to-number val)
+  (let ((raw-value (org-entry-get (point) "DRILL_LAST_INTERVAL")))
+    (if raw-value
+        (string-to-number raw-value)
       (or default 0))))
 
 (defun org-drill-entry-repeats-since-fail (&optional default)
   "Return the SM repeats since fail for entry at point."
-  (let ((val (org-entry-get (point) "DRILL_REPEATS_SINCE_FAIL")))
-    (if val
-        (string-to-number val)
+  (let ((raw-value (org-entry-get (point) "DRILL_REPEATS_SINCE_FAIL")))
+    (if raw-value
+        (string-to-number raw-value)
       (or default 0))))
 
 (defun org-drill-entry-total-repeats (&optional default)
   "Return the SM total number of repeats for the entry at point."
-  (let ((val (org-entry-get (point) "DRILL_TOTAL_REPEATS")))
-    (if val
-        (string-to-number val)
+  (let ((raw-value (org-entry-get (point) "DRILL_TOTAL_REPEATS")))
+    (if raw-value
+        (string-to-number raw-value)
       (or default 0))))
 
 (defun org-drill-entry-ease (&optional default)
   "Return the SM ease for the entry at point."
-  (let ((val (org-entry-get (point) "DRILL_EASE")))
-    (if val
-        (string-to-number val)
+  (let ((raw-value (org-entry-get (point) "DRILL_EASE")))
+    (if raw-value
+        (string-to-number raw-value)
       default)))
 
 (defun org-drill-random-dispersal-factor ()
@@ -1543,9 +1543,9 @@ of QUALITY."
 (defun org-drill-hypothetical-next-review-dates ()
   "Return hypothetical next review dates."
   (let ((intervals nil))
-    (dotimes (q 6)
+    (dotimes (quality 6)
       (push (max (or (car intervals) 0)
-                 (org-drill-hypothetical-next-review-date q))
+                 (org-drill-hypothetical-next-review-date quality))
             intervals))
     (reverse intervals)))
 
@@ -3042,16 +3042,16 @@ new/mature/failed counts."
   "MARKERS is a list of markers, all of which will be freed (set to
 point nowhere). Alternatively, MARKERS can be \\='t\\=', in which case
 all the markers used by Org-Drill will be freed."
-  (dolist (m (if (eql t markers)
-                 (append  (oref session done-entries)
-                          (oref session new-entries)
-                          (oref session failed-entries)
-                          (oref session again-entries)
-                          (oref session overdue-entries)
-                          (oref session young-mature-entries)
-                          (oref session old-mature-entries))
-               markers))
-    (set-marker m nil)))
+  (dolist (marker (if (eql t markers)
+                      (append  (oref session done-entries)
+                               (oref session new-entries)
+                               (oref session failed-entries)
+                               (oref session again-entries)
+                               (oref session overdue-entries)
+                               (oref session young-mature-entries)
+                               (oref session old-mature-entries))
+                    markers))
+    (set-marker marker nil)))
 
 ;;; overdue-data is a list of entries, each entry has the form (POS DUE AGE)
 ;;; where POS is a marker pointing to the start of the entry, and
@@ -3072,19 +3072,19 @@ how overdue they are."
   (let* ((lapsed-days (if org-drill--lapse-very-overdue-entries-p
                           org-drill-lapse-threshold-days
                           most-positive-fixnum))
-         (not-lapsed (cl-remove-if (lambda (a) (> (or (cl-second a) 0) lapsed-days))
+         (not-lapsed (cl-remove-if (lambda (entry) (> (or (cl-second entry) 0) lapsed-days))
                                    (oref session overdue-data)))
          (lapsed (cl-remove-if-not
-                  (lambda (a) (> (or (cl-second a) 0)
-                                 lapsed-days))
+                  (lambda (entry) (> (or (cl-second entry) 0)
+                                     lapsed-days))
                   (oref session overdue-data))))
     (setf (oref session overdue-entries)
          (mapcar 'cl-first
                   (append
                    (sort (org-drill-shuffle not-lapsed)
-                         (lambda (a b) (> (cl-second a) (cl-second b))))
+                         (lambda (entry other) (> (cl-second entry) (cl-second other))))
                    (sort lapsed
-                         (lambda (a b) (> (cl-third a) (cl-third b)))))))))
+                         (lambda (entry other) (> (cl-third entry) (cl-third other)))))))))
 
 (defun org-drill--entry-lapsed-p (session)
   "Return non-nil if the entry at point is lapsed (very overdue) in SESSION.
@@ -3118,9 +3118,9 @@ A card type that wants empty bodies is one whose entry in
 DRILL-EMPTY-P slot)."
   (and (org-drill-entry-empty-p)
        (let* ((card-type (org-entry-get (point) "DRILL_CARD_TYPE" nil))
-              (dat (cdr (assoc card-type org-drill-card-type-alist))))
+              (card-def (cdr (assoc card-type org-drill-card-type-alist))))
          (or (null card-type)
-             (not (cl-third dat))))))
+             (not (cl-third card-def))))))
 
 (defun org-drill--classify-status (session due last-int)
   "Return the status keyword for the entry at point.
