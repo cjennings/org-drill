@@ -3170,14 +3170,14 @@ COLLECTED is how many drill items have been gathered, SCANNED how many
 entries have been examined.  Updates only every 50 entries."
   (when (zerop (% scanned 50))
     (let* ((meter-width 40)
-           (sym1 (if (cl-oddp (floor scanned (* 50 meter-width))) ?| ?.))
-           (sym2 (if (eql sym1 ?.) ?| ?.)))
+           (current-meter-char (if (cl-oddp (floor scanned (* 50 meter-width))) ?| ?.))
+           (alternate-meter-char (if (eql current-meter-char ?.) ?| ?.)))
       (message "Collecting due drill items:%4d %s%s"
                collected
                (make-string (% (ceiling scanned 50) meter-width)
-                            sym2)
+                            alternate-meter-char)
                (make-string (- meter-width (% (ceiling scanned 50) meter-width))
-                            sym1)))))
+                            current-meter-char)))))
 
 (defun org-drill-map-entry-function (session)
   "Classify the drill entry at point and file it into SESSION's queues.
