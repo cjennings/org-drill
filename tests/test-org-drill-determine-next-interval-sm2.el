@@ -422,21 +422,38 @@ Simulates inconsistent learning."
 ;; The function asserts (> n 0) and (and (>= quality 0) (<= quality 5)).
 ;; n is normalized from 0 to 1 first, so only a negative n trips its assert.
 
+(defmacro test-scheduler--should-cl-assert (&rest body)
+  "Assert BODY signals a cl-assertion-failed.
+
+Mirrors the sm5 and simple8 files' helper — see their commentary
+for the ERT-29 signal-hook quirk that forces a `skip-unless' on
+Emacs <30.  Under undercover's edebug instrumentation the same
+quirk drops into a blocking debugger in batch mode, so a bare
+`should-error' here would hang the coverage job rather than fail."
+  `(progn
+     (skip-unless (>= emacs-major-version 30))
+     (let ((caught
+            (condition-case _err
+                (progn ,@body 'no-error)
+              (cl-assertion-failed 'caught))))
+       (unless (eq caught 'caught)
+         (ert-fail "expected cl-assertion-failed signal, got none")))))
+
 (ert-deftest test-org-drill-determine-next-interval-sm2-error-quality-above-max ()
   "Quality above the 0-5 range trips the quality assertion."
-  (should-error (org-drill-determine-next-interval-sm2 1 2 2.5 6 0 4.0 1)
-                :type 'cl-assertion-failed))
+  (test-scheduler--should-cl-assert
+   (org-drill-determine-next-interval-sm2 1 2 2.5 6 0 4.0 1)))
 
 (ert-deftest test-org-drill-determine-next-interval-sm2-error-quality-below-min ()
   "Quality below the 0-5 range trips the quality assertion."
-  (should-error (org-drill-determine-next-interval-sm2 1 2 2.5 -1 0 4.0 1)
-                :type 'cl-assertion-failed))
+  (test-scheduler--should-cl-assert
+   (org-drill-determine-next-interval-sm2 1 2 2.5 -1 0 4.0 1)))
 
 (ert-deftest test-org-drill-determine-next-interval-sm2-error-negative-n ()
   "A negative repeat count trips the (> n 0) assertion.  Note n=0 is
 normalized to 1 before the assert, so zero is not an error case."
-  (should-error (org-drill-determine-next-interval-sm2 1 -1 2.5 4 0 4.0 1)
-                :type 'cl-assertion-failed))
+  (test-scheduler--should-cl-assert
+   (org-drill-determine-next-interval-sm2 1 -1 2.5 4 0 4.0 1)))
 
 (provide 'test-org-drill-determine-next-interval-sm2)
 ;;; test-org-drill-determine-next-interval-sm2.el ends here
