@@ -43,5 +43,19 @@ Use this name in Simple8 tests where the field is called `ease' not `ef'."
   "Extract the optimal-factor matrix (position 6) from an SM5 RESULT list."
   (nth 6 result))
 
+;;;; Call adapters
+;; The schedulers now take an `org-drill-card-state' plus QUALITY rather than a
+;; long positional list (org-drill #147).  These adapters pack the positional
+;; args into the struct so the test call sites keep reading as the documented
+;; algorithm inputs, making each migration a one-symbol rename at the call.
+
+(defun test-scheduler--call-sm2 (last-interval n ef quality failures meanq total-repeats)
+  "Call the SM2 scheduler from positional args, packing them into a card-state."
+  (org-drill-determine-next-interval-sm2
+   (make-org-drill-card-state
+    :last-interval last-interval :repetitions n :ease ef
+    :failures failures :meanq meanq :total-repeats total-repeats)
+   quality))
+
 (provide 'testutil-scheduler)
 ;;; testutil-scheduler.el ends here
