@@ -148,7 +148,7 @@ roughly old + max(1, (next-old)/2) days."
   (with-fresh-drill-entry
     ;; Set up a card that's been reviewed before, with weight = 2.
     (org-set-property "DRILL_CARD_WEIGHT" "2")
-    (org-drill-store-item-data 10 3 0 3 4.5 2.5)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 0 :total-repeats 3 :meanq 4.5 :ease 2.5))
     (let ((q5-no-weight (progn
                           (org-delete-property "DRILL_CARD_WEIGHT")
                           (org-drill-hypothetical-next-review-date 5)))
@@ -180,7 +180,7 @@ This is what users see in the prompt: `1 / 2 / 3 / 4 / 6 / 9' style hints."
 (ert-deftest test-org-drill-strip-entry-data-removes-scheduling-properties ()
   "Stripping wipes every property listed in `org-drill-scheduling-properties'."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
     ;; sanity: the props are there
     (should (org-entry-get (point) "DRILL_LAST_INTERVAL"))
     (org-drill-strip-entry-data)

@@ -211,7 +211,7 @@ the resume hint."
               (insert "* Question :drill:\n")
               (org-mode)
               (goto-char (point-min))
-              (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+              (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
               (org-drill--copy-scheduling-to-marker dst-marker)))
           (with-current-buffer (find-file-noselect dst-file)
             (goto-char (point-min))
@@ -254,7 +254,7 @@ the resume hint."
 (ert-deftest test-strip-unmatched-dest-entries-clears-properties ()
   "Every entry left in the table has its scheduling props stripped."
   (with-org-tempfile "* Question :drill:\n"
-    (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
     (clrhash org-drill-dest-id-table)
     (puthash "stale-id" (point-marker) org-drill-dest-id-table)
     (org-drill--strip-unmatched-dest-entries)

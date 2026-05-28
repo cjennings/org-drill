@@ -9,6 +9,10 @@
 ;;   "When I rate a card, my progress is saved.  When I open the file
 ;;    tomorrow, my progress is still there."
 ;;
+;; get-item-data returns an `org-drill-card-state' struct; store-item-data
+;; takes one.  The tests below view the struct as a field list (via
+;; `test-roundtrip--state-as-list') so the expected values read at a glance.
+;;
 ;; The contract has three branches:
 ;;
 ;; 1. *Modern format*: store writes six DRILL_* properties; get reads
@@ -19,7 +23,7 @@
 ;;    transparently reads either format.  Backward compat — a 2015-era
 ;;    deck should still drill.
 ;;
-;; 3. *Virgin item*: a card that's never been rated returns
+;; 3. *Virgin item*: a card that's never been rated returns a state of
 ;;    `(0 0 0 0 nil nil)' so the scheduler knows to treat it as new.
 
 ;;; Code:
@@ -29,6 +33,17 @@
 (require 'org-drill)
 
 ;;;; Helpers
+
+(defun test-roundtrip--state-as-list (state)
+  "Return STATE's fields as a list, in the canonical
+(LAST-INTERVAL REPETITIONS FAILURES TOTAL-REPEATS MEANQ EASE) order, so the
+struct can be compared against a literal expected list."
+  (list (org-drill-card-state-last-interval state)
+        (org-drill-card-state-repetitions state)
+        (org-drill-card-state-failures state)
+        (org-drill-card-state-total-repeats state)
+        (org-drill-card-state-meanq state)
+        (org-drill-card-state-ease state)))
 
 (defmacro with-fresh-drill-entry (&rest body)
   "Run BODY at point on a fresh drill entry with no DRILL_* or LEARN_DATA properties."
@@ -58,11 +73,12 @@ PROPS is a list of (NAME . STRING-VALUE) cons cells."
 
 (ert-deftest test-org-drill-get-item-data-virgin-returns-zero-list ()
   "A drill entry with no persisted state returns the virgin sentinel.
-Six elements: zero interval, zero repeats, zero failures, zero total,
+Six fields: zero interval, zero repeats, zero failures, zero total,
 nil meanq, nil ease.  This is the value the scheduler reads on a
 never-rated card."
   (with-fresh-drill-entry
-    (should (equal '(0 0 0 0 nil nil) (org-drill-get-item-data)))))
+    (should (equal '(0 0 0 0 nil nil)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 ;;;; Modern format — read-side
 
@@ -74,13 +90,14 @@ never-rated card."
                              ("DRILL_TOTAL_REPEATS" . "5")
                              ("DRILL_AVERAGE_QUALITY" . "3.8")
                              ("DRILL_EASE" . "2.4"))
-    (should (equal '(10 3 1 5 3.8 2.4) (org-drill-get-item-data)))))
+    (should (equal '(10 3 1 5 3.8 2.4)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 (ert-deftest test-org-drill-get-item-data-modern-partial-properties-fall-back-to-defaults ()
   "Missing DRILL_* properties take their per-field defaults — but the
 presence of any DRILL_* property still puts the function in modern mode."
   (with-modern-drill-entry '(("DRILL_TOTAL_REPEATS" . "3"))
-    (let ((result (org-drill-get-item-data)))
+    (let ((result (test-roundtrip--state-as-list (org-drill-get-item-data))))
       ;; total-repeats → 3 (set), others take their defaults
       (should (equal 0 (nth 0 result)))   ; last-interval default 0
       (should (equal 0 (nth 1 result)))   ; repeats default 0
@@ -94,7 +111,7 @@ presence of any DRILL_* property still puts the function in modern mode."
 (ert-deftest test-org-drill-store-item-data-writes-all-six-properties ()
   "store-item-data sets all six DRILL_* properties on the entry at point."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
     (should (equal "10.0" (org-entry-get (point) "DRILL_LAST_INTERVAL")))
     (should (equal "3" (org-entry-get (point) "DRILL_REPEATS_SINCE_FAIL")))
     (should (equal "1" (org-entry-get (point) "DRILL_FAILURE_COUNT")))
@@ -106,7 +123,7 @@ presence of any DRILL_* property still puts the function in modern mode."
   "Floating-point fields are rounded — interval to 4dp, meanq/ease to 3dp.
 Keeps the buffer tidy and avoids stray precision noise like 2.4999999998."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 10.123456789 3 1 5 3.8765432 2.4567899)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10.123456789 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8765432 :ease 2.4567899))
     (should (equal "10.1235" (org-entry-get (point) "DRILL_LAST_INTERVAL")))
     (should (equal "3.877" (org-entry-get (point) "DRILL_AVERAGE_QUALITY")))
     (should (equal "2.457" (org-entry-get (point) "DRILL_EASE")))))
@@ -115,7 +132,7 @@ Keeps the buffer tidy and avoids stray precision noise like 2.4999999998."
   "Storing modern format wipes any legacy LEARN_DATA on the entry.
 Otherwise get-item-data would still read the stale legacy value first."
   (with-modern-drill-entry '(("LEARN_DATA" . "(2.5 1 0.5)"))
-    (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
     (should (null (org-entry-get (point) "LEARN_DATA")))))
 
 ;;;; Round-trip — the core user-facing assertion
@@ -130,16 +147,18 @@ floats because `org-drill-round-float' returns float; counters (REPEATS,
 FAILURES, TOTAL-REPEATS) come back as ints.  Numerically the round-trip
 is lossless; the scheduler accepts both."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 10 3 1 5 3.8 2.4)
-    (should (equal '(10.0 3 1 5 3.8 2.4) (org-drill-get-item-data)))))
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
+    (should (equal '(10.0 3 1 5 3.8 2.4)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 (ert-deftest test-org-drill-item-data-roundtrip-preserves-zero-values ()
   "A first-rating round-trip with mostly zeros survives intact.
 Same type-mixing pattern as the non-zero round-trip — see that test's
 note for why LAST-INTERVAL is 0.0 and the counters are integer 0."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 0 0 0 1 5.0 2.5)
-    (should (equal '(0.0 0 0 1 5.0 2.5) (org-drill-get-item-data)))))
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 0 :repetitions 0 :failures 0 :total-repeats 1 :meanq 5.0 :ease 2.5))
+    (should (equal '(0.0 0 0 1 5.0 2.5)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 ;;;; Legacy LEARN_DATA — backward compat
 
@@ -151,7 +170,8 @@ from their separate DRILL_* properties for the legacy path."
                              ("DRILL_FAILURE_COUNT" . "0")
                              ("DRILL_LAST_QUALITY" . "4"))
     ;; Returned: (interval, repeats, failures, repeats-again, last-quality, ease)
-    (should (equal '(7 2 0 2 4 2.6) (org-drill-get-item-data)))))
+    (should (equal '(7 2 0 2 4 2.6)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 (ert-deftest test-org-drill-get-item-data-invalid-LEARN_DATA-falls-through-to-modern ()
   "If LEARN_DATA is malformed, fall through to the modern DRILL_* fields.
@@ -163,14 +183,16 @@ Defends against a corrupted legacy entry from breaking a session."
                              ("DRILL_TOTAL_REPEATS" . "6")
                              ("DRILL_AVERAGE_QUALITY" . "3.5")
                              ("DRILL_EASE" . "2.1"))
-    (should (equal '(12 4 2 6 3.5 2.1) (org-drill-get-item-data)))))
+    (should (equal '(12 4 2 6 3.5 2.1)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 (ert-deftest test-org-drill-get-item-data-invalid-LEARN_DATA-and-no-modern-returns-virgin ()
   "Malformed LEARN_DATA on an entry with no DRILL_* fallback returns virgin sentinel.
 This matters: a corrupted-only legacy entry shouldn't crash the session,
 just be treated as never rated."
   (with-modern-drill-entry '(("LEARN_DATA" . "garbage"))
-    (should (equal '(0 0 0 0 nil nil) (org-drill-get-item-data)))))
+    (should (equal '(0 0 0 0 nil nil)
+                   (test-roundtrip--state-as-list (org-drill-get-item-data))))))
 
 (provide 'test-org-drill-item-data-roundtrip)
 

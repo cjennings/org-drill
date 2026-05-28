@@ -228,7 +228,7 @@ actions require explicit consent."
       (insert "* Question :drill:\n")
       (org-mode)
       (goto-char (point-min))
-      (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+      (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) nil)))
         (org-drill-strip-all-data)
         ;; Properties survive — user said no.
@@ -241,7 +241,7 @@ actions require explicit consent."
       (insert "* Question :drill:\n")
       (org-mode)
       (goto-char (point-min))
-      (org-drill-store-item-data 10 3 1 5 3.8 2.4)
+      (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 1 :total-repeats 5 :meanq 3.8 :ease 2.4))
       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
         (org-drill-strip-all-data)
         (dolist (prop org-drill-scheduling-properties)

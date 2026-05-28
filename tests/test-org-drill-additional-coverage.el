@@ -137,7 +137,7 @@ new-entries."
   "DRILL_CARD_WEIGHT > 1 stretches the next-interval delta — the resulting
 SCHEDULED date is closer to today than without weight."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 10 3 0 3 4.5 2.5)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 0 :total-repeats 3 :meanq 4.5 :ease 2.5))
     (with-fixed-now
       (let ((sched-no-weight nil)
             (sched-with-weight nil))
@@ -145,7 +145,7 @@ SCHEDULED date is closer to today than without weight."
         (org-drill-smart-reschedule 5)
         (setq sched-no-weight (org-entry-get (point) "SCHEDULED"))
         ;; Reset and reschedule with weight=2.
-        (org-drill-store-item-data 10 3 0 3 4.5 2.5)
+        (org-drill-store-item-data (make-org-drill-card-state :last-interval 10 :repetitions 3 :failures 0 :total-repeats 3 :meanq 4.5 :ease 2.5))
         (org-set-property "DRILL_CARD_WEIGHT" "2")
         (org-drill-smart-reschedule 5)
         (setq sched-with-weight (org-entry-get (point) "SCHEDULED"))

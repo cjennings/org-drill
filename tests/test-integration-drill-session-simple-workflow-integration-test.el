@@ -6,7 +6,7 @@
 ;;
 ;; 1. Entry detection (org-drill-entry-p)
 ;; 2. Entry enumeration (org-drill-map-entries)
-;; 3. Data retrieval (org-drill-get-item-data)
+;; 3. Data retrieval (test-int--state-as-list (org-drill-get-item-data))
 ;; 4. Scheduling algorithm (org-drill-determine-next-interval-sm2)
 ;; 5. Data storage (org-drill-store-item-data)
 ;;
@@ -18,6 +18,19 @@
 (require 'ert)
 (require 'assess)
 (require 'org-drill)
+
+;;; Helpers
+
+(defun test-int--state-as-list (state)
+  "View STATE (an `org-drill-card-state') as the canonical field list
+(LAST-INTERVAL REPETITIONS FAILURES TOTAL-REPEATS MEANQ EASE), so existing
+list-style assertions in this file keep working after the struct refactor."
+  (list (org-drill-card-state-last-interval state)
+        (org-drill-card-state-repetitions state)
+        (org-drill-card-state-failures state)
+        (org-drill-card-state-total-repeats state)
+        (org-drill-card-state-meanq state)
+        (org-drill-card-state-ease state)))
 
 ;;; Test Data
 
@@ -132,7 +145,7 @@ Should correctly parse all DRILL_* properties."
      ;; Find first drill entry
      (re-search-forward "^\\* First Card :drill:")
      (beginning-of-line)
-     (let ((data (org-drill-get-item-data)))
+     (let ((data (test-int--state-as-list (org-drill-get-item-data))))
        ;; Verify structure: (last-interval repeats failures total-repeats meanq ease)
        (should (listp data))
        (should (= (length data) 6))
@@ -154,7 +167,7 @@ Should return default values for new items."
      ;; Find first drill entry
      (re-search-forward "^\\* Brand New Card :drill:")
      (beginning-of-line)
-     (let ((data (org-drill-get-item-data)))
+     (let ((data (test-int--state-as-list (org-drill-get-item-data))))
        ;; Verify structure exists
        (should (listp data))
        (should (= (length data) 6))
@@ -179,7 +192,7 @@ Verifies integration between data retrieval and SM2 algorithm."
      (re-search-forward "^\\* Second Card :drill:")
      (beginning-of-line)
      (cl-destructuring-bind (last-interval repeats failures total-repeats meanq ease)
-         (org-drill-get-item-data)
+         (test-int--state-as-list (org-drill-get-item-data))
        ;; Simulate quality rating of 4 (good recall)
        (let* ((quality 4)
               (result (org-drill-determine-next-interval-sm2
@@ -204,7 +217,7 @@ Verifies that failure handling works correctly in integrated workflow."
      (re-search-forward "^\\* Third Card :drill:")
      (beginning-of-line)
      (cl-destructuring-bind (last-interval repeats failures total-repeats meanq ease)
-         (org-drill-get-item-data)
+         (test-int--state-as-list (org-drill-get-item-data))
        ;; Simulate complete failure (quality 0)
        (let* ((quality 0)
               (result (org-drill-determine-next-interval-sm2
@@ -232,7 +245,7 @@ Verifies org-drill-store-item-data updates properties correctly."
 
      ;; Get original data
      (cl-destructuring-bind (last-interval repeats failures total-repeats meanq ease)
-         (org-drill-get-item-data)
+         (test-int--state-as-list (org-drill-get-item-data))
 
        ;; Calculate new scheduling data
        (let* ((quality 5) ; Perfect recall
@@ -247,8 +260,11 @@ Verifies org-drill-store-item-data updates properties correctly."
               (new-total (nth 5 result)))
 
          ;; Store new data
-         (org-drill-store-item-data next-interval new-repeats new-failures
-                                    new-total new-meanq new-ease)
+         (org-drill-store-item-data
+          (make-org-drill-card-state
+           :last-interval next-interval :repetitions new-repeats
+           :failures new-failures :total-repeats new-total
+           :meanq new-meanq :ease new-ease))
 
          ;; Verify data was stored (properties exist and are valid)
          (should (org-entry-get (point) "DRILL_LAST_INTERVAL"))
@@ -317,7 +333,7 @@ Simulates reviewing a card and verifies all components work together."
 
        ;; Step 3: Retrieve current data
        (cl-destructuring-bind (last-interval repeats failures total-repeats meanq ease)
-           (org-drill-get-item-data)
+           (test-int--state-as-list (org-drill-get-item-data))
          (should (numberp last-interval))
          (should (numberp repeats))
 
@@ -334,11 +350,14 @@ Simulates reviewing a card and verifies all components work together."
                 (new-total (nth 5 result)))
 
            ;; Step 5: Store results
-           (org-drill-store-item-data next-interval new-repeats new-failures
-                                      new-total new-meanq new-ease)
+           (org-drill-store-item-data
+            (make-org-drill-card-state
+             :last-interval next-interval :repetitions new-repeats
+             :failures new-failures :total-repeats new-total
+             :meanq new-meanq :ease new-ease))
 
            ;; Step 6: Verify data persisted
-           (let ((retrieved-data (org-drill-get-item-data)))
+           (let ((retrieved-data (test-int--state-as-list (org-drill-get-item-data))))
              (should (= (nth 0 retrieved-data) (floor next-interval)))
              (should (= (nth 1 retrieved-data) new-repeats))
              (should (= (nth 2 retrieved-data) new-failures))
@@ -367,7 +386,7 @@ Question content.
        (re-search-forward "^\\* Corrupted Card :drill:")
        (beginning-of-line)
        ;; Should not error when retrieving data with invalid values
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          (should (listp data))
          ;; Verify function handles corruption gracefully
          (should (= (length data) 6)))))))
@@ -385,7 +404,7 @@ Question: Test question?
        (re-search-forward "^\\* Card Without Properties :drill:")
        (beginning-of-line)
        ;; Should not error, provide defaults
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          (should (listp data))
          (should (= (length data) 6)))))))
 
@@ -409,7 +428,7 @@ Question content.
      (lambda ()
        (re-search-forward "^\\* Negative Values Card :drill:")
        (beginning-of-line)
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          (should (listp data))
          ;; Verify system doesn't crash with negative values
          (should (= (length data) 6)))))))
@@ -434,7 +453,7 @@ Question content.
      (lambda ()
        (re-search-forward "^\\* Large Values Card :drill:")
        (beginning-of-line)
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          (should (listp data))
          (should (= (length data) 6))
          ;; Verify scheduling can handle extreme values
@@ -457,7 +476,7 @@ Should handle gracefully without crashing."
      (re-search-forward "Question: What is 2\\+2\\?")
      (beginning-of-line)
      ;; Should not crash, may return nil or defaults
-     (let ((data (org-drill-get-item-data)))
+     (let ((data (test-int--state-as-list (org-drill-get-item-data))))
        ;; Just verify it doesn't crash
        (should (or (null data) (listp data)))))))
 
@@ -472,7 +491,7 @@ Should handle non-drill headings gracefully."
      (beginning-of-line)
      (should-not (org-drill-entry-p))
      ;; Retrieving data from non-drill entry
-     (let ((data (org-drill-get-item-data)))
+     (let ((data (test-int--state-as-list (org-drill-get-item-data))))
        ;; Should not crash
        (should (or (null data) (listp data)))))))
 
@@ -545,7 +564,7 @@ Question with Unicode: 日本語 Café.
        (re-search-forward "^\\* Unicode Property Card :drill:")
        (beginning-of-line)
        ;; Should handle Unicode in content without issues
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          (should (listp data))
          (should (= (length data) 6)))))))
 
@@ -581,7 +600,7 @@ Question.
      (lambda ()
        (re-search-forward "^\\* Empty Drawer Card :drill:")
        (beginning-of-line)
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          ;; Should provide defaults for missing properties
          (should (listp data))
          (should (= (length data) 6)))))))
@@ -606,7 +625,7 @@ Question.
      (lambda ()
        (re-search-forward "^\\* Float Values Card :drill:")
        (beginning-of-line)
-       (let ((data (org-drill-get-item-data)))
+       (let ((data (test-int--state-as-list (org-drill-get-item-data))))
          (should (listp data))
          ;; Verify system handles float->int conversion
          (should (numberp (nth 0 data)))

@@ -1145,64 +1145,77 @@ Returns the parsed list or nil if invalid or unsafe."
   last-interval repetitions ease failures meanq total-repeats)
 
 (defun org-drill-get-item-data ()
-  "Return alist of 6 items, containing all the stored recall
-  data for the item at point:
+  "Return an `org-drill-card-state' with the stored recall data for the item at point.
+
+Slots:
 - LAST-INTERVAL is the interval in days that was used to schedule the item's
   current review date.
-- REPEATS is the number of items the item has been successfully recalled without
+- REPETITIONS is the number of times the item has been successfully recalled
   without any failures. It is reset to 0 upon failure to recall the item.
 - FAILURES is the total number of times the user has failed to recall the item.
 - TOTAL-REPEATS includes both successful and unsuccessful repetitions.
-- AVERAGE-QUALITY is the mean quality of recall of the item over
-  all its repetitions, successful and unsuccessful.
-- EASE is a number reflecting how easy the item is to learn. Higher is easier.
-"
+- MEANQ is the mean quality of recall of the item over all its repetitions,
+  successful and unsuccessful.
+- EASE is a number reflecting how easy the item is to learn. Higher is easier."
   (let ((learn-str (org-entry-get (point) "LEARN_DATA"))
         (repeats (org-drill-entry-total-repeats :missing)))
     (cond
      (learn-str
       (let ((learn-data (org-drill--safe-read-learn-data learn-str)))
         (if learn-data
-            (list (nth 0 learn-data)        ; last interval
-                  (nth 1 learn-data)        ; repetitions
-                  (org-drill-entry-failure-count)
-                  (nth 1 learn-data)
-                  (org-drill-entry-last-quality)
-                  (nth 2 learn-data))       ; EF
+            (make-org-drill-card-state
+             :last-interval (nth 0 learn-data)
+             :repetitions (nth 1 learn-data)
+             :failures (org-drill-entry-failure-count)
+             :total-repeats (nth 1 learn-data)
+             :meanq (org-drill-entry-last-quality)
+             :ease (nth 2 learn-data))   ; EF
           ;; If LEARN_DATA is invalid/unsafe, fall through to next case
           (if (not (eql :missing repeats))
-              (list (org-drill-entry-last-interval)
-                    (org-drill-entry-repeats-since-fail)
-                    (org-drill-entry-failure-count)
-                    (org-drill-entry-total-repeats)
-                    (org-drill-entry-average-quality)
-                    (org-drill-entry-ease))
+              (make-org-drill-card-state
+               :last-interval (org-drill-entry-last-interval)
+               :repetitions (org-drill-entry-repeats-since-fail)
+               :failures (org-drill-entry-failure-count)
+               :total-repeats (org-drill-entry-total-repeats)
+               :meanq (org-drill-entry-average-quality)
+               :ease (org-drill-entry-ease))
             ;; Virgin item
-            (list 0 0 0 0 nil nil)))))
+            (make-org-drill-card-state
+             :last-interval 0 :repetitions 0 :failures 0
+             :total-repeats 0 :meanq nil :ease nil)))))
      ((not (eql :missing repeats))
-      (list (org-drill-entry-last-interval)
-            (org-drill-entry-repeats-since-fail)
-            (org-drill-entry-failure-count)
-            (org-drill-entry-total-repeats)
-            (org-drill-entry-average-quality)
-            (org-drill-entry-ease)))
+      (make-org-drill-card-state
+       :last-interval (org-drill-entry-last-interval)
+       :repetitions (org-drill-entry-repeats-since-fail)
+       :failures (org-drill-entry-failure-count)
+       :total-repeats (org-drill-entry-total-repeats)
+       :meanq (org-drill-entry-average-quality)
+       :ease (org-drill-entry-ease)))
      (t  ; virgin item
-      (list 0 0 0 0 nil nil)))))
+      (make-org-drill-card-state
+       :last-interval 0 :repetitions 0 :failures 0
+       :total-repeats 0 :meanq nil :ease nil)))))
 
-(defun org-drill-store-item-data (last-interval repeats failures
-                                                total-repeats meanq
-                                                ease)
-  "Stores the given data in the item at point."
+(defun org-drill-store-item-data (state)
+  "Store the recall data in STATE, an `org-drill-card-state', into the item at point.
+STATE's LAST-INTERVAL slot holds the interval to schedule going forward (the
+caller passes the scheduler's next-interval there)."
   (org-entry-delete (point) "LEARN_DATA")
   (org-set-property "DRILL_LAST_INTERVAL"
-                    (number-to-string (org-drill-round-float last-interval 4)))
-  (org-set-property "DRILL_REPEATS_SINCE_FAIL" (number-to-string repeats))
-  (org-set-property "DRILL_TOTAL_REPEATS" (number-to-string total-repeats))
-  (org-set-property "DRILL_FAILURE_COUNT" (number-to-string failures))
+                    (number-to-string
+                     (org-drill-round-float (org-drill-card-state-last-interval state) 4)))
+  (org-set-property "DRILL_REPEATS_SINCE_FAIL"
+                    (number-to-string (org-drill-card-state-repetitions state)))
+  (org-set-property "DRILL_TOTAL_REPEATS"
+                    (number-to-string (org-drill-card-state-total-repeats state)))
+  (org-set-property "DRILL_FAILURE_COUNT"
+                    (number-to-string (org-drill-card-state-failures state)))
   (org-set-property "DRILL_AVERAGE_QUALITY"
-                    (number-to-string (org-drill-round-float meanq 3)))
+                    (number-to-string
+                     (org-drill-round-float (org-drill-card-state-meanq state) 3)))
   (org-set-property "DRILL_EASE"
-                    (number-to-string (org-drill-round-float ease 3))))
+                    (number-to-string
+                     (org-drill-round-float (org-drill-card-state-ease state) 3))))
 
 ;;; SM2 Algorithm =============================================================
 (defun org-drill-determine-next-interval-sm2 (last-interval n ef quality
@@ -1481,23 +1494,33 @@ item will be scheduled exactly this many days into the future."
         (weight (org-entry-get (point) "DRILL_CARD_WEIGHT")))
     (if (stringp weight)
         (setq weight (string-to-number weight)))
-    (cl-destructuring-bind (last-interval repetitions failures
-                                       total-repeats meanq ease)
-        (org-drill-get-item-data)
+    (let ((state (org-drill-get-item-data)))
       (cl-destructuring-bind (next-interval repetitions ease
                                          failures meanq total-repeats
                                          &optional new-ofmatrix)
           (cl-case org-drill-spaced-repetition-algorithm
-            (sm5 (org-drill-determine-next-interval-sm5 last-interval repetitions
-                                              ease quality failures
-                                              meanq total-repeats ofmatrix))
-            (sm2 (org-drill-determine-next-interval-sm2 last-interval repetitions
-                                              ease quality failures
-                                              meanq total-repeats))
-            (simple8 (org-drill-determine-next-interval-simple8 last-interval repetitions
-                                                      quality failures meanq
-                                                      total-repeats
-                                                      delta-days)))
+            (sm5 (org-drill-determine-next-interval-sm5
+                  (org-drill-card-state-last-interval state)
+                  (org-drill-card-state-repetitions state)
+                  (org-drill-card-state-ease state) quality
+                  (org-drill-card-state-failures state)
+                  (org-drill-card-state-meanq state)
+                  (org-drill-card-state-total-repeats state) ofmatrix))
+            (sm2 (org-drill-determine-next-interval-sm2
+                  (org-drill-card-state-last-interval state)
+                  (org-drill-card-state-repetitions state)
+                  (org-drill-card-state-ease state) quality
+                  (org-drill-card-state-failures state)
+                  (org-drill-card-state-meanq state)
+                  (org-drill-card-state-total-repeats state)))
+            (simple8 (org-drill-determine-next-interval-simple8
+                      (org-drill-card-state-last-interval state)
+                      (org-drill-card-state-repetitions state)
+                      quality
+                      (org-drill-card-state-failures state)
+                      (org-drill-card-state-meanq state)
+                      (org-drill-card-state-total-repeats state)
+                      delta-days)))
         (if (numberp days-ahead)
             (setq next-interval days-ahead))
 
@@ -1505,11 +1528,15 @@ item will be scheduled exactly this many days into the future."
                  (numberp weight) (cl-plusp weight)
                  (not (cl-minusp next-interval)))
             (setq next-interval
-                  (max 1.0 (+ last-interval
-                              (/ (- next-interval last-interval) weight)))))
+                  (max 1.0 (+ (org-drill-card-state-last-interval state)
+                              (/ (- next-interval
+                                    (org-drill-card-state-last-interval state))
+                                 weight)))))
 
-        (org-drill-store-item-data next-interval repetitions failures
-                                   total-repeats meanq ease)
+        (org-drill-store-item-data
+         (make-org-drill-card-state
+          :last-interval next-interval :repetitions repetitions :ease ease
+          :failures failures :meanq meanq :total-repeats total-repeats))
 
         (if (eql 'sm5 org-drill-spaced-repetition-algorithm)
             (setq org-drill-sm5-optimal-factor-matrix new-ofmatrix))
@@ -1533,34 +1560,46 @@ item will be scheduled exactly this many days into the future."
   "Return aninteger representing the number of days into the future
 that the current item would be scheduled, based on a recall quality
 of QUALITY."
-  (let ((weight (org-entry-get (point) "DRILL_CARD_WEIGHT")))
-    (cl-destructuring-bind (last-interval repetitions failures
-                                       total-repeats meanq ease)
-        (org-drill-get-item-data)
+  (let ((weight (org-entry-get (point) "DRILL_CARD_WEIGHT"))
+        (state (org-drill-get-item-data)))
       (if (stringp weight)
           (setq weight (string-to-number weight)))
       (cl-destructuring-bind (next-interval _repetitions _ease
                                          _failures _meanq _total-repeats
                                          &optional _ofmatrix)
           (cl-case org-drill-spaced-repetition-algorithm
-            (sm5 (org-drill-determine-next-interval-sm5 last-interval repetitions
-                                              ease quality failures
-                                              meanq total-repeats
-                                              org-drill-sm5-optimal-factor-matrix))
-            (sm2 (org-drill-determine-next-interval-sm2 last-interval repetitions
-                                              ease quality failures
-                                              meanq total-repeats))
-            (simple8 (org-drill-determine-next-interval-simple8 last-interval repetitions
-                                                      quality failures meanq
-                                                      total-repeats)))
+            (sm5 (org-drill-determine-next-interval-sm5
+                  (org-drill-card-state-last-interval state)
+                  (org-drill-card-state-repetitions state)
+                  (org-drill-card-state-ease state) quality
+                  (org-drill-card-state-failures state)
+                  (org-drill-card-state-meanq state)
+                  (org-drill-card-state-total-repeats state)
+                  org-drill-sm5-optimal-factor-matrix))
+            (sm2 (org-drill-determine-next-interval-sm2
+                  (org-drill-card-state-last-interval state)
+                  (org-drill-card-state-repetitions state)
+                  (org-drill-card-state-ease state) quality
+                  (org-drill-card-state-failures state)
+                  (org-drill-card-state-meanq state)
+                  (org-drill-card-state-total-repeats state)))
+            (simple8 (org-drill-determine-next-interval-simple8
+                      (org-drill-card-state-last-interval state)
+                      (org-drill-card-state-repetitions state)
+                      quality
+                      (org-drill-card-state-failures state)
+                      (org-drill-card-state-meanq state)
+                      (org-drill-card-state-total-repeats state))))
         (cond
          ((not (cl-plusp next-interval))
           0)
          ((and (numberp weight) (cl-plusp weight))
-          (+ last-interval
-             (max 1.0 (/ (- next-interval last-interval) weight))))
+          (+ (org-drill-card-state-last-interval state)
+             (max 1.0 (/ (- next-interval
+                            (org-drill-card-state-last-interval state))
+                         weight))))
          (t
-          next-interval))))))
+          next-interval)))))
 
 (defun org-drill-hypothetical-next-review-dates ()
   "Return hypothetical next review dates."
@@ -3649,27 +3688,24 @@ the tag \\='imported\\='."
 The destination's previous data is stripped first.  Skips zero-
 total-repeats items (i.e., never-rated cards) — those have no
 scheduling information worth migrating."
-  (cl-destructuring-bind (last-interval repetitions failures
-                                        total-repeats meanq ease)
-      (org-drill-get-item-data)
-    (let ((last-reviewed (org-entry-get (point) "DRILL_LAST_REVIEWED"))
-          (last-quality (org-entry-get (point) "DRILL_LAST_QUALITY"))
-          (scheduled-time (org-get-scheduled-time (point))))
-      (with-current-buffer (marker-buffer marker)
-        (save-excursion
-          (goto-char marker)
-          (org-drill-strip-entry-data)
-          (unless (zerop total-repeats)
-            (org-drill-store-item-data last-interval repetitions failures
-                                       total-repeats meanq ease)
-            (if last-quality
-                (org-set-property "DRILL_LAST_QUALITY" last-quality)
-              (org-delete-property "DRILL_LAST_QUALITY"))
-            (if last-reviewed
-                (org-set-property "DRILL_LAST_REVIEWED" last-reviewed)
-              (org-delete-property "DRILL_LAST_REVIEWED"))
-            (when scheduled-time
-              (org-schedule nil scheduled-time))))))))
+  (let ((state (org-drill-get-item-data))
+        (last-reviewed (org-entry-get (point) "DRILL_LAST_REVIEWED"))
+        (last-quality (org-entry-get (point) "DRILL_LAST_QUALITY"))
+        (scheduled-time (org-get-scheduled-time (point))))
+    (with-current-buffer (marker-buffer marker)
+      (save-excursion
+        (goto-char marker)
+        (org-drill-strip-entry-data)
+        (unless (zerop (org-drill-card-state-total-repeats state))
+          (org-drill-store-item-data state)
+          (if last-quality
+              (org-set-property "DRILL_LAST_QUALITY" last-quality)
+            (org-delete-property "DRILL_LAST_QUALITY"))
+          (if last-reviewed
+              (org-set-property "DRILL_LAST_REVIEWED" last-reviewed)
+            (org-delete-property "DRILL_LAST_REVIEWED"))
+          (when scheduled-time
+            (org-schedule nil scheduled-time)))))))
 
 (defun org-drill--migrate-from-source (src dest ignore-new-items-p)
   "Walk SRC's entries, migrating scheduling data into matching DEST entries.

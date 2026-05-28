@@ -95,7 +95,7 @@
 (ert-deftest test-org-drill-relearn-item-resets-interval-to-zero ()
   "Relearning sets DRILL_LAST_INTERVAL back to 0 — the card behaves as new."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 30 5 0 5 4.0 2.5)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 30 :repetitions 5 :failures 0 :total-repeats 5 :meanq 4.0 :ease 2.5))
     (with-fixed-now
       (org-drill-relearn-item))
     ;; After relearn: last-interval should be 0
@@ -105,7 +105,7 @@
 (ert-deftest test-org-drill-relearn-item-removes-scheduled-stamp ()
   "Relearning unschedules the entry (days-ahead = 0 path)."
   (with-fresh-drill-entry
-    (org-drill-store-item-data 30 5 0 5 4.0 2.5)
+    (org-drill-store-item-data (make-org-drill-card-state :last-interval 30 :repetitions 5 :failures 0 :total-repeats 5 :meanq 4.0 :ease 2.5))
     (org-schedule nil "2026-06-01")
     (with-fixed-now
       (org-drill-relearn-item))
