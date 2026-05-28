@@ -1435,17 +1435,12 @@ to a mean item quality of QUALITY."
      (* -1.2403 quality)
      1.4515))
 
-(defun org-drill-determine-next-interval-simple8 (last-interval repeats quality
-                                                      failures meanq totaln
-                                                      &optional delta-days)
-  "Arguments:
-- LAST-INTERVAL -- the number of days since the item was last reviewed.
-- REPEATS -- the number of times the item has been successfully reviewed
-- EASE -- the \\='easiness factor\\='
-- QUALITY -- 0 to 5
-- DELTA-DAYS -- how many days overdue was the item when it was reviewed.
-  0 = reviewed on the scheduled day. +N = N days overdue.
-  -N = reviewed N days early.
+(defun org-drill-determine-next-interval-simple8 (state quality &optional delta-days)
+  "Return the Simple8 schedule for STATE after a review of recall QUALITY (0-5).
+
+STATE is an `org-drill-card-state'.  DELTA-DAYS is how many days overdue
+the item was when reviewed: 0 = on the scheduled day, +N = N days late,
+-N = N days early.
 
 Returns the new item data, as a list of 6 values:
 - NEXT-INTERVAL
@@ -1455,6 +1450,11 @@ Returns the new item data, as a list of 6 values:
 - AVERAGE-QUALITY
 - TOTAL-REPEATS.
 See the documentation for `org-drill-get-item-data' for a description of these."
+  (let ((last-interval (org-drill-card-state-last-interval state))
+        (repeats (org-drill-card-state-repetitions state))
+        (failures (org-drill-card-state-failures state))
+        (meanq (org-drill-card-state-meanq state))
+        (totaln (org-drill-card-state-total-repeats state)))
   (cl-assert (>= repeats 0))
   (cl-assert (and (>= quality 0) (<= quality 5)))
   (cl-assert (or (null meanq) (and (>= meanq 0) (<= meanq 5))))
@@ -1503,7 +1503,7 @@ See the documentation for `org-drill-get-item-data' for a description of these."
      failures
      meanq
      totaln
-     )))
+     ))))
 
 ;;; Essentially copied from `org-learn.el', but modified to
 ;;; optionally call the SM2 or simple8 functions.
@@ -1529,13 +1529,7 @@ item will be scheduled exactly this many days into the future."
             (sm5 (org-drill-determine-next-interval-sm5 state quality ofmatrix))
             (sm2 (org-drill-determine-next-interval-sm2 state quality))
             (simple8 (org-drill-determine-next-interval-simple8
-                      (org-drill-card-state-last-interval state)
-                      (org-drill-card-state-repetitions state)
-                      quality
-                      (org-drill-card-state-failures state)
-                      (org-drill-card-state-meanq state)
-                      (org-drill-card-state-total-repeats state)
-                      delta-days)))
+                      state quality delta-days)))
         (if (numberp days-ahead)
             (setq next-interval days-ahead))
 
@@ -1587,12 +1581,7 @@ of QUALITY."
                   state quality org-drill-sm5-optimal-factor-matrix))
             (sm2 (org-drill-determine-next-interval-sm2 state quality))
             (simple8 (org-drill-determine-next-interval-simple8
-                      (org-drill-card-state-last-interval state)
-                      (org-drill-card-state-repetitions state)
-                      quality
-                      (org-drill-card-state-failures state)
-                      (org-drill-card-state-meanq state)
-                      (org-drill-card-state-total-repeats state))))
+                      state quality)))
         (cond
          ((not (cl-plusp next-interval))
           0)

@@ -66,5 +66,15 @@ Use this name in Simple8 tests where the field is called `ease' not `ef'."
     :failures failures :meanq meanq :total-repeats total-repeats)
    quality of-matrix delta-days))
 
+(defun test-scheduler--call-simple8 (last-interval repeats quality failures
+                                                  meanq totaln &optional delta-days)
+  "Call the Simple8 scheduler from positional args, packing them into a card-state.
+Simple8 doesn't use the ease slot; it's left unset in the struct."
+  (org-drill-determine-next-interval-simple8
+   (make-org-drill-card-state
+    :last-interval last-interval :repetitions repeats
+    :failures failures :meanq meanq :total-repeats totaln)
+   quality delta-days))
+
 (provide 'testutil-scheduler)
 ;;; testutil-scheduler.el ends here

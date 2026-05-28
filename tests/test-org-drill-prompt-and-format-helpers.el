@@ -105,7 +105,11 @@ next-interval is multiplied by a small dispersal factor (≠1.0 in general)."
     (cl-letf (((symbol-function 'org-drill-random-dispersal-factor)
                (lambda () 1.5)))
       (let* ((result (org-drill-determine-next-interval-simple8
-                      4.0 1 5 0 5.0 1 0))
+                      (make-org-drill-card-state
+                       :last-interval 4.0 :repetitions 1
+                       :failures 0 :meanq 5.0 :total-repeats 1)
+                      5
+                      0))
              (next (nth 0 result)))
         ;; With factor 1.5, the original next-interval was scaled up.
         (should (numberp next))
