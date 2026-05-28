@@ -415,5 +415,5 @@ proceed against this spec.
 - =org-drill.el= around line 540 — the existing =persist-defvar= use
   for the SM5 matrix.  Template for the session-log persist + the
   =condition-case= wrapper for corrupt-load recovery.
-- =working/fsrs-spec/fsrs-spec.org= — sister v0 spec, same DECIDE-marker
+- =docs/design/fsrs-spec.org= — sister v0 spec, same DECIDE-marker
   convention.

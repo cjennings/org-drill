@@ -189,7 +189,7 @@ before writing the function body.
 #+begin_src elisp
 (defcustom org-drill-fsrs-parameters
   '(0.4 0.6 2.4 5.8 4.93 0.94 0.86 0.01 1.49 0.14 0.94 2.18 0.05 0.34 1.26 0.29 2.61)
-  "17-tuple FSRS-4.5 default parameters.  See =docs/fsrs-spec.org=.")
+  "17-tuple FSRS-4.5 default parameters.  See =docs/design/fsrs-spec.org=.")
 
 (defcustom org-drill-fsrs-desired-retention 0.9
   "Target retention for FSRS scheduling.  Higher = shorter intervals.")
@@ -254,7 +254,7 @@ Same in =hypothetical-next-review-date= (read-only, no store).
 
 #+begin_src elisp
 - FSRS :: Free Spaced Repetition Scheduler, the DSR-based algorithm
-  used in Anki since 2024.  See `docs/fsrs-spec.org` for the algorithm
+  used in Anki since 2024.  See `docs/design/fsrs-spec.org` for the algorithm
   and the state model.
 #+end_src
 

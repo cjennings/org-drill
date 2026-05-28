@@ -88,8 +88,7 @@
   "Persistent session log and the statistics dashboard.
 The dashboard is opt-in via \\='M-x org-drill-statistics\\='; the session log
 itself is updated automatically at the end of every completed (non-suspended)
-drill session.  See working/stats-dashboard/stats-dashboard.org for the
-design rationale."
+drill session.  See docs/design/stats-dashboard.org for the design rationale."
   :tag "Org-Drill Statistics"
   :group 'org-drill)
 
@@ -567,7 +566,7 @@ pace of learning.")
      "Persistent matrix of optimal factors (fallback after load failure).")))
 
 ;; Statistics session log.  Records one entry per completed drill session
-;; so the stats dashboard (working/stats-dashboard/stats-dashboard.org) has
+;; so the stats dashboard (docs/design/stats-dashboard.org) has
 ;; a temporal axis to render trends against.  Same persist-defvar +
 ;; condition-case pattern as the SM5 matrix above.  See
 ;; `org-drill--session-log-quarantine' for the corrupt-file recovery
@@ -576,7 +575,7 @@ pace of learning.")
 (cl-defstruct org-drill-session-record
   "One completed drill session, persisted to `org-drill-session-log'.
 Slots match the v0 stats-dashboard spec; see
-working/stats-dashboard/stats-dashboard.org for field semantics."
+docs/design/stats-dashboard.org for field semantics."
   start-time      ; float — `float-time' at session start
   end-time        ; float — `float-time' at session end
   scope           ; symbol or list — `org-drill-scope' at start

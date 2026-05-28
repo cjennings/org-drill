@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 ;; Tests for the persist + recording layer that powers the stats
-;; dashboard (see working/stats-dashboard/stats-dashboard.org).
+;; dashboard (see docs/design/stats-dashboard.org).
 ;;
 ;; The contract:
 ;;
