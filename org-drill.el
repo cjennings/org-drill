@@ -471,8 +471,54 @@ considered."
   :group 'org-drill-session
   :type 'boolean)
 
+;; ADR 2026-05-27 — default scheduling algorithm (upstream issue #46).
+;;
+;; Context.  The default for the past several years has been SM5.  Issue
+;; #46 (2022-07) asked whether SM2 or Simple8 would be better defaults
+;; out of the box.  The decision was deferred until #147 (the card-state
+;; refactor) landed, which it now has.
+;;
+;; The three candidates as implemented here:
+;;
+;; - SM2: classic SuperMemo 2.  Carries no algorithm-level state beyond
+;;   the per-card item-data.  Simple, well-validated, no persistence-file
+;;   surface.  The conservative default in many SR implementations.
+;;
+;; - SM5: SuperMemo 5 with a per-user optimal-factor matrix persisted
+;;   via `persist-defvar' (`org-drill-sm5-optimal-factor-matrix').  The
+;;   matrix really does adapt across sessions, so SM5's "learns over
+;;   time" claim materializes for each user.  The downside is the
+;;   persistence-file dependency — upstream issue #45 surfaced "End of
+;;   file during parsing" raised from inside `persist', and we now wrap
+;;   the load in a `condition-case' that falls back to a fresh nil
+;;   matrix.  A SM5 user whose persist file rots silently regresses to
+;;   learning-from-scratch every session.
+;;
+;; - Simple8: modernized SM-family scheduler.  Learns per-card difficulty
+;;   from quality grades and failure count, no global matrix.  Adjusts
+;;   intervals for early or late reviews (delta-days), a real-world
+;;   concern that SM2 and SM5 don't address.  No persistence-file
+;;   dependency.  The "boring modern" choice.
+;;
+;; Decision.  Simple8.  Per-card difficulty learning gives most of SM5's
+;; adaptation value without the persist-file fragility, and delta-days
+;; handling matches how people actually use spaced repetition (cards do
+;; get reviewed late).  SM5 stays available for users who want the
+;; persisted optimal-factor matrix; SM2 stays available for users who
+;; want the simplest possible scheduler.
+;;
+;; Consequences.  New installs: Simple8 by default.  Existing users with
+;; `org-drill-spaced-repetition-algorithm' set in their config: no
+;; change.  Existing users on the previous default with no setting in
+;; their config: their next session schedules under Simple8, which uses
+;; a different per-card state shape than SM5.  No state migration is
+;; performed — Simple8 reads what it can from the existing item-data
+;; (last-interval, repetitions, failures, total-repeats, meanq) and
+;; carries on.  SM5's optimal-factor matrix is preserved on disk and
+;; available if the user switches back.
+
 (defcustom org-drill-spaced-repetition-algorithm
-  'sm5
+  'simple8
   "Which SuperMemo spaced repetition algorithm to use for scheduling items.
 Available choices are:
 - SM2 :: the SM2 algorithm, used in SuperMemo 2.0
@@ -483,7 +529,10 @@ Available choices are:
   failures, it does not modify the matrix of values that
   governs how fast the inter-repetition intervals increase.  A method for
   adjusting intervals when items are reviewed early or late has been taken
-  from SM11, a later version of the algorithm, and included in Simple8."
+  from SM11, a later version of the algorithm, and included in Simple8.
+
+The default is Simple8; see the ADR comment above the defcustom in the
+source for the rationale."
   :group 'org-drill-algorithm
   :type '(choice (const sm2) (const sm5) (const simple8)))
 
