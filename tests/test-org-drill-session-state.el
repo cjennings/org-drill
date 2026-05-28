@@ -77,6 +77,48 @@ session look long-expired."
       (eieio-oset session slot (list (make-marker-at 1)))
       (should (org-drill-entries-pending-p session)))))
 
+;;;; org-drill-on-timeout-action — discard-current
+
+(ert-deftest test-org-drill-entries-pending-p-discard-current-times-out-drops-again ()
+  "With `discard-current' and the duration reached, the again-queue no longer
+keeps the session pending — time is up, so the re-drill items are dropped."
+  (let ((session (org-drill-session))
+        (org-drill-on-timeout-action 'discard-current)
+        (org-drill-maximum-duration 1))                       ; 1-minute limit
+    (oset session start-time (- (float-time (current-time)) 3600)) ; started an hour ago
+    (oset session again-entries (list (make-marker-at 1)))
+    (should-not (org-drill-entries-pending-p session))))
+
+(ert-deftest test-org-drill-entries-pending-p-discard-current-times-out-drops-current-item ()
+  "With `discard-current' and the duration reached, a leftover current-item is
+dropped rather than forcing the session to continue."
+  (let ((session (org-drill-session))
+        (org-drill-on-timeout-action 'discard-current)
+        (org-drill-maximum-duration 1))
+    (oset session start-time (- (float-time (current-time)) 3600))
+    (oset session current-item (make-marker-at 1))
+    (should-not (org-drill-entries-pending-p session))))
+
+(ert-deftest test-org-drill-entries-pending-p-finish-current-times-out-keeps-again ()
+  "Default `finish-current' preserves the old behavior: the again-queue keeps
+the session pending even past the duration limit."
+  (let ((session (org-drill-session))
+        (org-drill-on-timeout-action 'finish-current)
+        (org-drill-maximum-duration 1))
+    (oset session start-time (- (float-time (current-time)) 3600))
+    (oset session again-entries (list (make-marker-at 1)))
+    (should (org-drill-entries-pending-p session))))
+
+(ert-deftest test-org-drill-entries-pending-p-discard-current-before-timeout-is-normal ()
+  "Before the duration is reached, `discard-current' behaves normally — queued
+items still count as pending."
+  (let ((session (org-drill-session))
+        (org-drill-on-timeout-action 'discard-current)
+        (org-drill-maximum-duration 20))
+    (oset session start-time (float-time (current-time)))     ; just started
+    (oset session again-entries (list (make-marker-at 1)))
+    (should (org-drill-entries-pending-p session))))
+
 ;;;; org-drill-pending-entry-count
 
 (ert-deftest test-org-drill-pending-entry-count-empty-session-zero ()

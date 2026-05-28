@@ -119,6 +119,20 @@ Nil means unlimited."
   :group 'org-drill-session
   :type '(choice integer (const nil)))
 
+(defcustom org-drill-on-timeout-action
+  'finish-current
+  "What to do with unfinished cards when `org-drill-maximum-duration' is reached.
+
+- `finish-current' (default): keep the historical behavior.  The
+  card in progress and any cards queued for re-drilling this session
+  (the \\='again\\=' queue) are still presented before the session ends.
+- `discard-current': end the session as soon as the time limit is
+  reached, dropping the in-progress card and the again-queue.  The
+  dropped cards are left untouched — they keep whatever scheduling
+  they already had and simply turn up again next session."
+  :group 'org-drill-session
+  :type '(choice (const finish-current) (const discard-current)))
+
 (defcustom org-drill-item-count-includes-failed-items-p
   nil
   "If non-nil, count failed items in overall count.
@@ -2830,17 +2844,24 @@ Returns the value the answer presenter returned, or `skip'/`edit'/nil."
 (defun org-drill-entries-pending-p (session)
   "Return non-nil if SESSION still has entries left to drill.
 True when an item is in progress or queued, unless the session's
-item-count or duration limit has been reached."
-  (or (oref session again-entries)
-      (oref session current-item)
-      (and (not (org-drill-maximum-item-count-reached-p session))
-           (not (org-drill-maximum-duration-reached-p session))
-           (or (oref session new-entries)
-               (oref session failed-entries)
-               (oref session young-mature-entries)
-               (oref session old-mature-entries)
-               (oref session overdue-entries)
-               (oref session again-entries)))))
+item-count or duration limit has been reached.
+
+When `org-drill-on-timeout-action' is `discard-current' and the
+duration limit has been reached, the in-progress card and the
+again-queue stop counting as pending, so the session ends now
+rather than finishing them."
+  (unless (and (eq org-drill-on-timeout-action 'discard-current)
+               (org-drill-maximum-duration-reached-p session))
+    (or (oref session again-entries)
+        (oref session current-item)
+        (and (not (org-drill-maximum-item-count-reached-p session))
+             (not (org-drill-maximum-duration-reached-p session))
+             (or (oref session new-entries)
+                 (oref session failed-entries)
+                 (oref session young-mature-entries)
+                 (oref session old-mature-entries)
+                 (oref session overdue-entries)
+                 (oref session again-entries))))))
 
 (defun org-drill-pending-entry-count (session)
   "Return the number of entries still queued in SESSION.
