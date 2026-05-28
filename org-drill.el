@@ -1122,6 +1122,28 @@ Returns the parsed list or nil if invalid or unsafe."
             data))
       (error nil))))
 
+;;; Card-state struct ---------------------------------------------------------
+;;
+;; ADR (2026-05-27): the schedulers and the item-data round-trip used to pass
+;; the same recall fields around as long positional lists, in three different
+;; orderings — `get-item-data'/`store-item-data' as
+;; (last-interval repetitions failures total-repeats meanq ease), the schedulers
+;; taking (last-interval n ef quality failures meanq total-repeats ...), and the
+;; schedulers returning (next-interval repetitions ef failures meanq
+;; total-repeats ...).  Three call sites re-ordered between the shapes by hand,
+;; each re-order a latent positional bug, and a new scheduler had to match all
+;; three layouts.
+;;
+;; `org-drill-card-state' bundles the shared stored fields under named slots so
+;; the shape is explicit and the manual re-ordering goes away.  `next-interval'
+;; and `quality' stay outside the struct: the former is scheduling output, the
+;; latter is the rating just entered — neither is persisted recall state.
+;;
+;; Migration is staged: this struct lands first (inert), then the item-data
+;; round-trip adopts it, then each scheduler in turn.
+(cl-defstruct org-drill-card-state
+  last-interval repetitions ease failures meanq total-repeats)
+
 (defun org-drill-get-item-data ()
   "Return alist of 6 items, containing all the stored recall
   data for the item at point:
