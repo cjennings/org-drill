@@ -84,6 +84,15 @@
   :tag "Org-Drill Leech"
   :group 'org-drill)
 
+(defgroup org-drill-statistics nil
+  "Persistent session log and the statistics dashboard.
+The dashboard is opt-in via \\='M-x org-drill-statistics\\='; the session log
+itself is updated automatically at the end of every completed (non-suspended)
+drill session.  See working/stats-dashboard/stats-dashboard.org for the
+design rationale."
+  :tag "Org-Drill Statistics"
+  :group 'org-drill)
+
 (defconst org-drill-version "2.7.0"
   "Version of the org-drill package.
 Keep this in sync with the Version header at the top of this file.")
@@ -557,6 +566,69 @@ pace of learning.")
    (defvar org-drill-sm5-optimal-factor-matrix nil
      "Persistent matrix of optimal factors (fallback after load failure).")))
 
+;; Statistics session log.  Records one entry per completed drill session
+;; so the stats dashboard (working/stats-dashboard/stats-dashboard.org) has
+;; a temporal axis to render trends against.  Same persist-defvar +
+;; condition-case pattern as the SM5 matrix above.  See
+;; `org-drill--session-log-quarantine' for the corrupt-file recovery
+;; behavior — the dashboard's spec adds a rename-and-quarantine step on
+;; top of the SM5 path's fresh-start fallback.
+(cl-defstruct org-drill-session-record
+  "One completed drill session, persisted to `org-drill-session-log'.
+Slots match the v0 stats-dashboard spec; see
+working/stats-dashboard/stats-dashboard.org for field semantics."
+  start-time      ; float — `float-time' at session start
+  end-time        ; float — `float-time' at session end
+  scope           ; symbol or list — `org-drill-scope' at start
+  algorithm       ; symbol — `org-drill-spaced-repetition-algorithm' at start
+  qualities       ; vector of int — every 0-5 quality entered, in order
+  pass-percent    ; int — (count qualities > failure-quality) / total * 100
+  new-count       ; int — new entries at session end
+  mature-count    ; int — young-mature + old-mature entries at session end
+  failed-count    ; int — failed entries at session end
+  cram-mode)      ; bool — cram-mode value at session start
+
+(defun org-drill--session-log-quarantine ()
+  "Rename a corrupt `org-drill-session-log' persist file out of the way.
+The file is renamed to a `.corrupt-YYYY-MM-DDTHHMMSS' sibling so the
+next save doesn't overwrite a potentially recoverable file.  The
+timestamp includes seconds so a repeat corruption on the same day does
+not silently overwrite the earlier quarantine.  No-op if the file
+can't be located or doesn't exist.
+
+Locates the on-disk file via `persist--file-location', which is an
+internal symbol in the `persist' package.  The `fboundp' gate keeps a
+future persist release that renames it from breaking
+package load — at the cost of becoming a silent no-op on that release,
+which would let the next save overwrite the corrupt file.  Worth a
+follow-up if persist changes its API."
+  (when (fboundp 'persist--file-location)
+    (let ((file (ignore-errors
+                  (persist--file-location 'org-drill-session-log))))
+      (when (and file (file-exists-p file))
+        (let ((quarantine (format "%s.corrupt-%s"
+                                  file
+                                  (format-time-string "%Y-%m-%dT%H%M%S"))))
+          (ignore-errors (rename-file file quarantine t))
+          (lwarn 'org-drill :warning
+                 "Corrupt session-log file moved to %s; starting fresh."
+                 quarantine))))))
+
+(condition-case err
+    (persist-defvar org-drill-session-log
+      nil
+      "List of `org-drill-session-record' values, newest first.
+Updated at the end of every completed (non-suspended) drill session by
+`org-drill-record-session'.  Read by the stats dashboard
+(`org-drill-statistics', when implemented) to render trend panels.")
+  (error
+   (message
+    "org-drill: failed to load persisted session log (%s); using fresh state"
+    err)
+   (ignore-errors (org-drill--session-log-quarantine))
+   (defvar org-drill-session-log nil
+     "Persistent session log (fallback after load failure).")))
+
 (defcustom org-drill-sm5-initial-interval
   4.0
   "In the SM5 algorithm, the initial interval after the first
@@ -732,6 +804,17 @@ or performing cleanup.")
     :initform 0.0
     :documentation "Time at which the session started"
     :type float)
+   (scope-at-start
+    :initform nil
+    :documentation
+    "Value of `org-drill-scope' captured at session start.  Stored on the
+stats-dashboard session record verbatim so a mid-session change to the
+defcustom doesn't misrepresent what was actually drilled.")
+   (algorithm-at-start
+    :initform nil
+    :documentation
+    "Value of `org-drill-spaced-repetition-algorithm' captured at session
+start.  Same rationale as `scope-at-start'.")
    (new-entries :initform nil)
    (dormant-entry-count :initform 0)
    (due-entry-count :initform 0)
@@ -3125,16 +3208,22 @@ order to make items appear more frequently over time."
           (max 1 (+ (oref session dormant-entry-count)
                     (oref session due-entry-count))))))
 
+(defun org-drill--compute-pass-percent (qualities)
+  "Return the pass percentage for QUALITIES — count above
+`org-drill-failure-quality' over total, rounded.  Empty QUALITIES yields 0
+(via `(max 1 ...)' on the denominator).  Single source of truth shared by
+the end-of-session report and the dashboard session record."
+  (round (* 100 (cl-count-if (lambda (qual)
+                               (> qual org-drill-failure-quality))
+                             qualities))
+         (max 1 (length qualities))))
+
 (defun org-drill-final-report (session)
   "Display the end-of-session summary for SESSION.
 Reports how many items were reviewed, the pass percentage, and the
 new/mature/failed counts."
   (let* ((qualities (oref session qualities))
-         (pass-percent
-          (round (* 100 (cl-count-if (lambda (qual)
-                                       (> qual org-drill-failure-quality))
-                                     qualities))
-                 (max 1 (length qualities))))
+         (pass-percent (org-drill--compute-pass-percent qualities))
          (prompt (org-drill--build-final-report-summary
                   session pass-percent qualities))
          (max-mini-window-height 0.6))
@@ -3146,6 +3235,37 @@ new/mature/failed counts."
                (< pass-percent (- 100 org-drill-forgetting-index)))
       (read-char-exclusive
        (org-drill--build-low-pass-warning session pass-percent)))))
+
+(defun org-drill-session-record-from-session (session start-time end-time)
+  "Build an `org-drill-session-record' from SESSION, START-TIME, END-TIME.
+
+START-TIME and END-TIME are floats (e.g. from `float-time').  The
+record's pass-percent comes from `org-drill--compute-pass-percent', the
+same helper `org-drill-final-report' uses, so the two stay in lockstep.
+Scope and algorithm are read from the session's start-of-session
+captures (`scope-at-start' / `algorithm-at-start') so a mid-session
+defcustom change doesn't misrepresent the recorded session."
+  (let ((qualities (oref session qualities)))
+    (make-org-drill-session-record
+     :start-time start-time
+     :end-time end-time
+     :scope (oref session scope-at-start)
+     :algorithm (oref session algorithm-at-start)
+     :qualities (apply #'vector qualities)
+     :pass-percent (org-drill--compute-pass-percent qualities)
+     :new-count (length (oref session new-entries))
+     :mature-count (+ (length (oref session young-mature-entries))
+                      (length (oref session old-mature-entries)))
+     :failed-count (length (oref session failed-entries))
+     :cram-mode (oref session cram-mode))))
+
+(defun org-drill-record-session (session start-time end-time)
+  "Append a record for SESSION to `org-drill-session-log' and persist.
+START-TIME and END-TIME are floats.  The new record lands at the head
+of the log (newest first), then `persist-save' commits the log to disk."
+  (push (org-drill-session-record-from-session session start-time end-time)
+        org-drill-session-log)
+  (persist-save 'org-drill-session-log))
 
 (defun org-drill-free-markers (session markers)
   "MARKERS is a list of markers, all of which will be freed (set to
@@ -3364,7 +3484,9 @@ CRAM, if non-nil, starts the session in cram mode."
         (oref session failed-entries) nil
         (oref session again-entries) nil
         (oref session undo-stack) nil
-        (oref session start-time) (float-time (current-time))))
+        (oref session start-time) (float-time (current-time))
+        (oref session scope-at-start) org-drill-scope
+        (oref session algorithm-at-start) org-drill-spaced-repetition-algorithm))
 
 (defun org-drill--collect-entries (session scope drill-match)
   "Scan buffers in SCOPE for drill entries matching DRILL-MATCH.
@@ -3399,7 +3521,8 @@ sorts the overdue queue."
   "Display the appropriate end-of-session message and side-effects.
 If SESSION was suspended (end-pos is set), shows the resume hint.
 Otherwise runs `org-drill-final-report', persists the SM5 matrix,
-and optionally saves buffers."
+records the session for the stats dashboard, and optionally saves
+buffers."
   (cond
    ((oref session end-pos)
     (when (markerp (oref session end-pos))
@@ -3411,6 +3534,17 @@ and optionally saves buffers."
     (org-drill-final-report session)
     (when (eql 'sm5 org-drill-spaced-repetition-algorithm)
       (persist-save 'org-drill-sm5-optimal-factor-matrix))
+    ;; Recording is protective of the end-of-session flow: a recorder
+    ;; bug or a persist-save failure must not block the final-report
+    ;; dismissal or the SM5 save above.  Trap the error and surface it
+    ;; via `message' so silent data loss leaves a forensic trail.
+    (condition-case err
+        (org-drill-record-session session
+                                  (oref session start-time)
+                                  (float-time (current-time)))
+      (error
+       (message "org-drill: failed to record session for the stats log (%s)"
+                err)))
     (when org-drill-save-buffers-after-drill-sessions-p
       (save-some-buffers))
     (message "Drill session finished!")
@@ -3537,7 +3671,9 @@ scan will be performed."
       (org-drill-free-markers session (oref session done-entries))
       (if (markerp (oref session current-item))
           (set-marker (oref session current-item) nil))
-      (setf (oref session start-time) (float-time (current-time)))
+      (setf (oref session start-time) (float-time (current-time))
+            (oref session scope-at-start) org-drill-scope
+            (oref session algorithm-at-start) org-drill-spaced-repetition-algorithm)
       (setf (oref session done-entries) nil
             (oref session current-item) nil)
       (org-drill scope drill-match t))

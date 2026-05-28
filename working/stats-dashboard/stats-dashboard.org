@@ -1,0 +1,419 @@
+#+TITLE: Comprehensive Statistics Dashboard for org-drill — v0 design spec
+#+AUTHOR: Craig Jennings
+#+DATE: 2026-05-27
+
+* Status
+
+*Ratified 2026-05-27* — all 10 open decisions accepted as recommended.
+The companion todo entry is =todo.org=:20 [#A] "Comprehensive
+Statistics Dashboard".  No implementation has started; the spec is now
+the implementation gate.
+
+See =Ratified decisions= at the bottom of this file for the locked
+choice on each question; inline =Decided:= blocks repeat the choice
+next to the section it affects.
+
+* Context and motivation
+
+org-drill's end-of-session report is =org-drill-final-report=
+(=org-drill.el=:3128) — a minibuffer prompt with the pass percentage,
+qualities histogram, and the new/mature/failed counts for the *single
+just-completed session*.  Nothing about that report persists.  Once the
+user presses a key to dismiss it, the only retained learning data is
+what each card carries in its own =DRILL_*= properties.
+
+The currently-retained per-card data is real and usable:
+
+| Property | Source |
+|----------+--------|
+| =DRILL_LAST_INTERVAL= | scheduler output, updated every review |
+| =DRILL_REPEATS_SINCE_FAIL= | review counter resetting on a lapse |
+| =DRILL_TOTAL_REPEATS= | lifetime review count for the card |
+| =DRILL_FAILURE_COUNT= | lifetime lapses |
+| =DRILL_AVERAGE_QUALITY= | running mean of the 0–5 quality scale |
+| =DRILL_EASE= | SM-family easiness factor |
+| =DRILL_LAST_QUALITY= | quality at the most recent review |
+| =DRILL_LAST_REVIEWED= | inactive timestamp of the most recent review |
+| =DATE_ADDED= | inactive timestamp of card creation |
+
+What's missing is the *temporal axis*: there's no record that the user
+reviewed N cards on a given day, or that the pass percentage trended
+upward over the last month, or that a particular card has been failed
+three times in the last two weeks.  Those questions need a per-review
+or per-session event log that survives Emacs restarts.
+
+This spec sketches a dashboard that combines (a) per-card aggregates
+read live from existing properties (no new storage) with (b) a new
+persisted session/review history (org-persist, separate file) that
+gives the time-series view.
+
+* Goals
+
+- New command =org-drill-statistics= opens an interactive dashboard
+  buffer summarizing review history across all known drill files.
+- Per-card aggregates read live from the existing =DRILL_*= properties
+  — no migration, no new per-card properties.
+- A new persisted session log records, at the end of every session,
+  what landed (date, files scoped, cards reviewed, qualities histogram,
+  duration, pass percentage).  Survives Emacs restarts.
+- Dashboard renders trends, distributions, and "needs attention" lists
+  by reading the session log + the per-card properties.
+- CSV export for users who want to bring the data into a spreadsheet
+  or a notebook.
+- No-op for users who don't open the dashboard — collection cost on
+  session end is bounded (single =persist-save= write), and the
+  dashboard command is lazy-loaded.
+
+* Non-goals (v1)
+
+- *No graphical charting.*  The dashboard renders in plain org-mode
+  text — tables, unicode-block sparklines, and minibuffer summaries.
+  A Vega/SVG/PNG output stays out of v1; users who want charts use
+  CSV export.
+- *No per-review event log.*  The persisted record is per-session, not
+  per-card-review.  A full per-review log is more expensive to write,
+  more expensive to read, and crosses the line into "we are now a
+  learning-analytics platform."  Per-card lifetime aggregates already
+  cover most card-level questions.
+- *No multi-machine sync.*  The persist file is local; users who want
+  cross-machine continuity sync it themselves (org-roam-style,
+  Syncthing, whatever).  Defining a sync protocol is out of scope.
+- *No retroactive backfill.*  Sessions before this feature lands have
+  no history; the dashboard starts from the first session after the
+  upgrade.  Per-card properties carry their own retroactive baseline.
+- *No forecasting.*  "How many cards will be due tomorrow" is one of
+  the dashboard's panels (cheap — sum over SCHEDULED dates), but
+  predictive forecasting of retention or workload is FSRS territory
+  and stays there.
+
+* Data model
+
+** Live (no new storage)
+
+Read at dashboard-open time, no persistence:
+
+- Per-card aggregates by walking =org-map-entries= over the user's
+  configured =org-drill-scope= or an explicit scope argument.  For each
+  drill entry, the existing accessors (=org-drill-entry-total-repeats=,
+  =-failure-count=, =-average-quality=, =-last-reviewed=, =-last-interval=,
+  =-ease=, =-last-quality=, =-days-since-creation=) yield the per-card
+  view without touching disk beyond reading the file.
+- Card status counts (new / young-mature / old-mature / overdue /
+  lapsed / due-tomorrow) by reusing =org-drill-entry-status= over the
+  scope.  This is what the session opener already does in =org-drill=
+  for the initial counts.
+
+** Persisted (new storage)
+
+A single new persisted variable, the session log:
+
+#+begin_src elisp
+(persist-defvar org-drill-session-log nil
+  "List of completed-session records, newest first.
+
+Each entry is an `org-drill-session-record' struct.")
+#+end_src
+
+=org-drill-session-record= is a =cl-defstruct=:
+
+| Slot | Type | Meaning |
+|------+------+---------|
+| =start-time= | float | =float-time= at session start |
+| =end-time= | float | =float-time= at session end |
+| =scope= | symbol or list | =org-drill-scope= value at session start |
+| =algorithm= | symbol | =org-drill-spaced-repetition-algorithm= at start |
+| =qualities= | vector of int | every quality 0–5 entered, in order |
+| =pass-percent= | int | qualities > =org-drill-failure-quality=, / total |
+| =new-count= | int | size of =(oref session new-entries)= at end |
+| =mature-count= | int | =young-mature= + =old-mature= entries at end |
+| =failed-count= | int | =failed-entries= at end |
+| =cram-mode= | bool | =cram-mode= at session start |
+
+A single record is small (a few hundred bytes).  At one session per
+day, the log holds a year of history in well under 100 KB.  At three
+sessions per day for ten years, still under 4 MB.  No pruning needed
+for v1.
+
+=Decided:= persistence shape = =persist-defvar=.  Integrates with the
+=persist= dependency already in =Package-Requires=, lives at
+=~/.emacs.d/persist/org-drill-session-log= by default, mirrors the
+=org-drill-sm5-optimal-factor-matrix= precedent including its
+=condition-case= wrapper for corrupt-load recovery.  Plain elisp file
+and org-mode log file declined — the former is what =persist-defvar=
+already is under the hood, the latter trades structured I/O for
+parse-and-rewrite failure modes.
+
+=Decided:= corrupted-load recovery = log a single warning, start with
+a fresh empty log, rename the corrupt file to =.corrupt-YYYY-MM-DD=
+before next save so it isn't overwritten.  Mirrors the SM5-matrix
+path verbatim.  History loss is bounded; the precedent makes this
+consistent.
+
+** Out-of-scope storage
+
+Explicit non-storage to keep scope tight:
+
+- No per-review event log (a row per card-rating).
+- No per-card review history (a list of past timestamps + qualities
+  per card).  =DRILL_AVERAGE_QUALITY= and =DRILL_LAST_REVIEWED= cover
+  the dashboard's needs; full per-card history is what FSRS would
+  need, and FSRS owns that question.
+- No per-deck (per-file) aggregate cache.  Walking org files on
+  dashboard open is fast enough for the file counts org-drill users
+  actually have; if a user has 10 000 files this becomes an issue —
+  cross that bridge if it shows up.
+
+* UI shell
+
+The dashboard is a single command =org-drill-statistics= that opens a
+read-only org-mode buffer named =*Org Drill Statistics*= with the
+sections below.  =Decided:= keymap = =q= bury, =g= refresh, =e=
+export-csv, =s= scope, =r= range, =a= algorithm-filter, =RET= follow
+the card link at point.  None conflict with read-only org-mode
+bindings.
+
+** Section 1 — Overview
+
+A four-column summary table:
+
+#+begin_example
+| Total cards | New | Mature | Lapsed |
+|-------------+-----+--------+--------|
+|         412 |  18 |    367 |     27 |
+#+end_example
+
+Plus a one-line "last session" recap reading the most recent record
+from =org-drill-session-log= (date, duration, cards reviewed, pass %).
+
+** Section 2 — Trends
+
+Two unicode-block sparklines:
+
+- Reviews per day (last 90 days).  X axis = day, Y axis = card count.
+- Pass rate per day (last 90 days).  Same X axis, Y axis = 0..100.
+
+Range and bar count are defcustoms.  Default 90 days = roughly a
+quarter, fits on one line at 1 cell/day.
+
+Below the sparklines, a small table of weekly aggregates for the last
+12 weeks (reviews, pass %, average duration).
+
+=Decided:= sparkline character set = quadrant blocks (▁▂▃▄▅▆▇█),
+8 levels.  Emacs renders them fine by default; users on a font without
+them are rare enough to handle by documentation rather than a runtime
+fallback.
+
+** Section 3 — Distribution
+
+Quality histogram across all sessions in the log (or scoped — see the
+range filter below).  A horizontal bar per quality 0..5 with the
+absolute count and the percentage.
+
+** Section 4 — Needs attention
+
+Three tables:
+
+- *Leech candidates* — cards with =DRILL_FAILURE_COUNT= ≥
+  =org-drill-leech-failure-threshold= and =DRILL_AVERAGE_QUALITY= below
+  =org-drill-statistics-leech-quality-threshold= (=Decided:= default
+  *2.5*, below the Hard boundary of 3).  Link to card.
+- *Long-overdue* — cards with =DRILL_LAST_REVIEWED= ≥
+  =org-drill-lapse-threshold-days= ago.  Sorted most-overdue first.
+- *Forgotten new* — cards with =DATE_ADDED= ≥ 14 days ago but
+  =DRILL_TOTAL_REPEATS= = 0 (or absent).  Useful for catching cards
+  that never got into rotation.
+
+Each table caps at =org-drill-stats-attention-row-limit= rows
+(defcustom, default 10) with a "+N more" footer.
+
+** Section 5 — Forecast
+
+A one-line table for the next 7 days:
+
+#+begin_example
+| Today | +1 | +2 | +3 | +4 | +5 | +6 |
+|-------+----+----+----+----+----+----+
+|    34 | 18 | 22 |  9 | 41 | 12 |  6 |
+#+end_example
+
+Computed from SCHEDULED timestamps across the scope.  No prediction —
+just count of cards already scheduled for each day.
+
+** Range filter
+
+A line at the top of the buffer carrying the active filters:
+
+#+begin_example
+Scope: file (~/notes/drill.org)    Range: last 90d    Algorithm: simple8
+#+end_example
+
+Filters are interactive at the buffer header (=s= cycles scope, =r=
+cycles range, =a= filters algorithm).  Defaults: =org-drill-scope=, "last
+90d", "all algorithms".
+
+=Decided:= single buffer-wide filter for v1.  Per-section filters
+multiply the UI surface and most users want the same window across
+sections.
+
+* Export
+
+=M-x org-drill-statistics-export-csv= writes one CSV per requested
+view to a user-chosen directory:
+
+- =sessions.csv= — one row per session record in the log.  Columns
+  match the struct slots.
+- =cards.csv= — one row per drill entry in the active scope, with
+  every =DRILL_*= property plus the computed status.
+- =daily.csv= — one row per day in the active range, with reviews,
+  passes, fails, pass-percent, duration-minutes.
+
+=Decided:= column delimiter = =,= (CSV) with proper quoting via
+=csv-mode='s writer if available, else a hand-rolled =csv-quote=
+helper.  Users who want TSV can run a one-line sed pipe.
+
+* Performance
+
+The expensive paths and their bounds:
+
+| Path | Cost | Mitigation |
+|------+------+------------|
+| Session log save | one =persist-save= per session | already wrapped in =condition-case=; cost is a few KB write |
+| Scope walk on dashboard open | =org-map-entries= over scope | same cost as a session open; cached for the dashboard's lifetime, refreshes on =g= |
+| CSV export | one walk + one file write | one-off; user-triggered |
+| Sparkline rendering | bucket the in-memory log by day | log is bounded; bucket-by-day is linear in log length |
+
+The dashboard does *not* run at session open or close — only when the
+user invokes =M-x org-drill-statistics=.  Session-end pays one =persist-save=
+write.  Idle Emacs pays nothing.
+
+=Decided:= sync dashboard open for v1.  =org-map-entries= over a
+typical scope is well under a second.  Async refresh
+(=run-with-idle-timer=, status line in the buffer) is a follow-on
+ticket if anyone reports >2 s on a large scope.
+
+* Integration points
+
+** New code
+
+- =org-drill-session-record= struct (=cl-defstruct=).
+- =org-drill-session-log= persistent variable.
+- =org-drill-record-session= — called once from the end-of-session
+  finalizer (=org-drill-finalize-session= or wherever
+  =org-drill-final-report= currently sits) when the session was not
+  aborted.  Appends a record, =persist-save='s the log.
+- =org-drill-statistics= — interactive command, opens the dashboard.
+- =org-drill-statistics-mode= — minor-mode-like keymap on top of an
+  org-mode buffer (=q g e s r a=).
+- =org-drill-statistics--render-*= — one helper per section (overview,
+  trends, distribution, attention, forecast).
+- =org-drill-statistics-export-csv= — interactive command.
+
+** Existing code touched
+
+- =org-drill-final-report= grows a single call to =org-drill-record-session=
+  before the read-char-exclusive dismisses the report (so the record
+  lands even if the user dismisses immediately).
+- A defcustom group =org-drill-statistics= added as a sibling group
+  next to =org-drill-session= (=Decided:= sibling, not nested — the
+  dashboard isn't session-state and a separate group keeps Customize's
+  tree readable).
+
+** Aborted-session handling
+
+A session ended via =C-g= or quit doesn't reach =org-drill-final-report=.
+=Decided:= record nothing for these — an =unwind-protect= path to
+salvage partial sessions is deferred.  The "abort discards" semantics
+matches =org-drill-on-timeout-action= =discard-current= already, and a
+partial record's pass percentage misrepresents what the user
+experienced.
+
+* Defcustoms (proposed list)
+
+#+begin_src elisp
+(defcustom org-drill-statistics-trend-days 90
+  "Number of days the trends section spans.")
+
+(defcustom org-drill-statistics-forecast-days 7
+  "Number of days ahead the forecast section spans.")
+
+(defcustom org-drill-statistics-attention-row-limit 10
+  "Maximum rows in each `Needs attention' table.")
+
+(defcustom org-drill-statistics-leech-quality-threshold 2.5
+  "Cards with `DRILL_AVERAGE_QUALITY' below this and at least
+`org-drill-leech-failure-threshold' failures appear in `Leech candidates'.")
+
+(defcustom org-drill-statistics-export-directory
+  (expand-file-name "org-drill-stats/" user-emacs-directory)
+  "Default directory for CSV exports.")
+#+end_src
+
+* Test strategy
+
+Three test files, matching the existing file-per-area convention:
+
+1. =tests/test-org-drill-session-record.el= — struct construction,
+   round-trip through =persist-save=/=persist-load=, log appending,
+   newest-first ordering, corrupted-load recovery.
+2. =tests/test-org-drill-statistics-aggregates.el= — given a fixture
+   session log + a fixture org file with known =DRILL_*= properties,
+   each of the dashboard's section-render helpers produces the
+   expected table.  Aggregation math (pass %, weekly buckets,
+   sparkline buckets) is tested here with deterministic input.
+3. =tests/test-org-drill-statistics-integration.el= — end-to-end:
+   simulate three completed sessions via =org-drill-record-session=
+   against a fixture file, open the dashboard, assert the buffer
+   contents and the export-CSV output.
+
+Normal / Boundary / Error per public function on the helpers.
+Boundary cases worth pinning: empty log (no sessions yet), single
+session, range filter that selects zero days, scope that contains
+zero drill entries, the day-bucket histogram on the day-boundary
+edge (a session that crosses midnight).
+
+* Effort estimate
+
+Multi-day, plausibly spanning sessions:
+
+- Session record + persist round-trip + recording hook: 0.5 day.
+- Dashboard renderer (5 sections) + minor-mode keymap + range filter:
+  1.5 days.  Each section is a small helper; the time goes to layout
+  polish and the sparkline math.
+- CSV export: 0.5 day.
+- Test coverage at parity (the three files above, ~40 tests): 1 day.
+- Documentation (manual entry, README option list, defcustom
+  docstrings, this spec ratified): 0.5 day.
+
+Realistic: a session for the persist + recording layer with full
+tests, a session for the dashboard renderer, a follow-up session for
+the export + docs + polish.
+
+* Ratified decisions (2026-05-27)
+
+All 10 open questions resolved as recommended.  Implementation can
+proceed against this spec.
+
+| # | Question | Resolution |
+|---+----------+------------|
+| 1 | Persistence shape | =persist-defvar=, mirroring the SM5 matrix |
+| 2 | Corrupted-load recovery | warn, fresh-start, rename to =.corrupt-YYYY-MM-DD= |
+| 3 | Sparkline character set | quadrant blocks (▁▂▃▄▅▆▇█) |
+| 4 | Filter scope | single buffer-wide filter |
+| 5 | CSV delimiter | =,= with proper quoting |
+| 6 | Dashboard-open mode | sync |
+| 7 | Aborted-session recording | record nothing; =unwind-protect= deferred |
+| 8 | Dashboard keymap | =q g e s r a RET= |
+| 9 | Leech-quality threshold default | 2.5 |
+| 10 | Defcustom group placement | sibling group =org-drill-statistics= |
+
+* References
+
+- =org-drill.el= around line 729 — the =org-drill-session= EIEIO class.
+  Source of the per-session in-memory state that becomes a record.
+- =org-drill.el= around line 3128 — =org-drill-final-report=.  Hook
+  site for =org-drill-record-session=.
+- =org-drill.el= around line 540 — the existing =persist-defvar= use
+  for the SM5 matrix.  Template for the session-log persist + the
+  =condition-case= wrapper for corrupt-load recovery.
+- =working/fsrs-spec/fsrs-spec.org= — sister v0 spec, same DECIDE-marker
+  convention.
