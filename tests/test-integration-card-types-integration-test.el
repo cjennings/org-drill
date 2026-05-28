@@ -14,11 +14,15 @@
 (ert-deftest test-integration-card-types-integration-card-type-system-complete ()
   "Test that card type system handles all expected types.
 Verifies all card types are registered in org-drill-card-type-alist."
+  ;; "translate_number" is intentionally absent: issue #43 removed it from
+  ;; org-drill-card-type-alist because its presenter never existed (see
+  ;; test-org-drill-translate-number-regression.el).  Listing it here would
+  ;; re-assert a registration the project deliberately dropped.
   (let ((expected-types '(nil "simple" "simpletyped" "twosided" "multisided"
                           "hide1cloze" "hide2cloze" "show1cloze" "show2cloze"
                           "multicloze" "hidefirst" "hidelast"
                           "hide1_firstmore" "show1_lastmore" "show1_firstless"
-                          "conjugate" "decline_noun" "spanish_verb" "translate_number")))
+                          "conjugate" "decline_noun" "spanish_verb")))
     (dolist (type expected-types)
       (let ((entry (assoc type org-drill-card-type-alist)))
         (should entry)
