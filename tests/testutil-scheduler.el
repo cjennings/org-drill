@@ -57,5 +57,14 @@ Use this name in Simple8 tests where the field is called `ease' not `ef'."
     :failures failures :meanq meanq :total-repeats total-repeats)
    quality))
 
+(defun test-scheduler--call-sm5 (last-interval n ef quality failures meanq
+                                              total-repeats of-matrix &optional delta-days)
+  "Call the SM5 scheduler from positional args, packing them into a card-state."
+  (org-drill-determine-next-interval-sm5
+   (make-org-drill-card-state
+    :last-interval last-interval :repetitions n :ease ef
+    :failures failures :meanq meanq :total-repeats total-repeats)
+   quality of-matrix delta-days))
+
 (provide 'testutil-scheduler)
 ;;; testutil-scheduler.el ends here

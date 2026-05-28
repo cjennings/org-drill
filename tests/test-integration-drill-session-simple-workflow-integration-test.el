@@ -7,7 +7,7 @@
 ;; 1. Entry detection (org-drill-entry-p)
 ;; 2. Entry enumeration (org-drill-map-entries)
 ;; 3. Data retrieval (test-int--state-as-list (org-drill-get-item-data))
-;; 4. Scheduling algorithm (org-drill-determine-next-interval-sm2)
+;; 4. Scheduling algorithm (test-scheduler--call-sm2)
 ;; 5. Data storage (org-drill-store-item-data)
 ;;
 ;; This test uses actual org-mode buffers with drill entries to verify
@@ -18,6 +18,10 @@
 (require 'ert)
 (require 'assess)
 (require 'org-drill)
+
+(add-to-list 'load-path
+             (file-name-directory (or load-file-name buffer-file-name)))
+(require 'testutil-scheduler)
 
 ;;; Helpers
 
@@ -195,7 +199,7 @@ Verifies integration between data retrieval and SM2 algorithm."
          (test-int--state-as-list (org-drill-get-item-data))
        ;; Simulate quality rating of 4 (good recall)
        (let* ((quality 4)
-              (result (org-drill-determine-next-interval-sm2
+              (result (test-scheduler--call-sm2
                        last-interval repeats ease quality
                        failures meanq total-repeats))
               (next-interval (nth 0 result))
@@ -220,7 +224,7 @@ Verifies that failure handling works correctly in integrated workflow."
          (test-int--state-as-list (org-drill-get-item-data))
        ;; Simulate complete failure (quality 0)
        (let* ((quality 0)
-              (result (org-drill-determine-next-interval-sm2
+              (result (test-scheduler--call-sm2
                        last-interval repeats ease quality
                        failures meanq total-repeats))
               (next-interval (nth 0 result))
@@ -249,7 +253,7 @@ Verifies org-drill-store-item-data updates properties correctly."
 
        ;; Calculate new scheduling data
        (let* ((quality 5) ; Perfect recall
-              (result (org-drill-determine-next-interval-sm2
+              (result (test-scheduler--call-sm2
                        last-interval repeats ease quality
                        failures meanq total-repeats))
               (next-interval (nth 0 result))
@@ -339,7 +343,7 @@ Simulates reviewing a card and verifies all components work together."
 
          ;; Step 4: Simulate review with quality 4
          (let* ((quality 4)
-                (result (org-drill-determine-next-interval-sm2
+                (result (test-scheduler--call-sm2
                          last-interval repeats ease quality
                          failures meanq total-repeats))
                 (next-interval (nth 0 result))
@@ -459,7 +463,7 @@ Question content.
          ;; Verify scheduling can handle extreme values
          (cl-destructuring-bind (last-interval repeats failures total-repeats meanq ease)
              data
-           (let ((result (org-drill-determine-next-interval-sm2
+           (let ((result (test-scheduler--call-sm2
                           last-interval repeats ease 4
                           failures meanq total-repeats)))
              (should (listp result)))))))))

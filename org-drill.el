@@ -1334,10 +1334,18 @@ Returns a list:
         of
       (* of last-interval))))
 
-(defun org-drill-determine-next-interval-sm5 (last-interval n ef quality
-                                                  failures meanq total-repeats
-                                                  of-matrix &optional delta-days)
-  "Return next interval."
+(defun org-drill-determine-next-interval-sm5 (state quality of-matrix &optional delta-days)
+  "Return the SM5 schedule for STATE after a review of recall QUALITY (0-5).
+
+STATE is an `org-drill-card-state'.  OF-MATRIX is the optimal-factor
+matrix.  DELTA-DAYS, when set, adjusts the interval for an early or late
+repetition."
+  (let ((last-interval (org-drill-card-state-last-interval state))
+        (n (org-drill-card-state-repetitions state))
+        (ef (org-drill-card-state-ease state))
+        (failures (org-drill-card-state-failures state))
+        (meanq (org-drill-card-state-meanq state))
+        (total-repeats (org-drill-card-state-total-repeats state)))
   (if (zerop n) (setq n 1))
   (if (null ef) (setq ef 2.5))
   (cl-assert (> n 0))
@@ -1384,7 +1392,7 @@ Returns a list:
             failures
             meanq
             (1+ total-repeats)
-            of-matrix)))))
+            of-matrix))))))
 
 ;;; Simple8 Algorithm =========================================================
 (defun org-drill-simple8-first-interval (failures)
@@ -1518,13 +1526,7 @@ item will be scheduled exactly this many days into the future."
                                          failures meanq total-repeats
                                          &optional new-ofmatrix)
           (cl-case org-drill-spaced-repetition-algorithm
-            (sm5 (org-drill-determine-next-interval-sm5
-                  (org-drill-card-state-last-interval state)
-                  (org-drill-card-state-repetitions state)
-                  (org-drill-card-state-ease state) quality
-                  (org-drill-card-state-failures state)
-                  (org-drill-card-state-meanq state)
-                  (org-drill-card-state-total-repeats state) ofmatrix))
+            (sm5 (org-drill-determine-next-interval-sm5 state quality ofmatrix))
             (sm2 (org-drill-determine-next-interval-sm2 state quality))
             (simple8 (org-drill-determine-next-interval-simple8
                       (org-drill-card-state-last-interval state)
@@ -1582,13 +1584,7 @@ of QUALITY."
                                          &optional _ofmatrix)
           (cl-case org-drill-spaced-repetition-algorithm
             (sm5 (org-drill-determine-next-interval-sm5
-                  (org-drill-card-state-last-interval state)
-                  (org-drill-card-state-repetitions state)
-                  (org-drill-card-state-ease state) quality
-                  (org-drill-card-state-failures state)
-                  (org-drill-card-state-meanq state)
-                  (org-drill-card-state-total-repeats state)
-                  org-drill-sm5-optimal-factor-matrix))
+                  state quality org-drill-sm5-optimal-factor-matrix))
             (sm2 (org-drill-determine-next-interval-sm2 state quality))
             (simple8 (org-drill-determine-next-interval-simple8
                       (org-drill-card-state-last-interval state)

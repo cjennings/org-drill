@@ -21,7 +21,10 @@ the dispersal factor."
     (cl-letf (((symbol-function 'org-drill-random-dispersal-factor)
                (lambda () 1.5)))
       (let* ((result (org-drill-determine-next-interval-sm5
-                      4.0 2 2.5 5 0 5.0 1
+                      (make-org-drill-card-state
+                       :last-interval 4.0 :repetitions 2 :ease 2.5
+                       :failures 0 :meanq 5.0 :total-repeats 1)
+                      5
                       org-drill-sm5-optimal-factor-matrix))
              (next (nth 0 result)))
         (should (numberp next))
