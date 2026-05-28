@@ -1,0 +1,49 @@
+X-Pm-Gluon-Id: 57f89696-06f3-4553-b044-450613deeddd
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain; charset=utf-8
+References: <XyTaMdWRU1ofJSuMVC4jBhGdqJzIFjJHNNADYN5HOlzbiSM3YHcCD3MVhmMBLXPpEOjLxa3VCmu4wXdhIQriUA==@protonmail.internalid>
+X-Pm-Date: Wed, 29 Apr 2026 09:21:49 +0000
+X-Pm-External-Id: <20260429042145.700159.90560f27@cjennings.net>
+X-Pm-Internal-Id: XyTaMdWRU1ofJSuMVC4jBhGdqJzIFjJHNNADYN5HOlzbiSM3YHcCD3MVhmMBLXPpEOjLxa3VCmu4wXdhIQriUA==
+To: "Phillip Lord" <phillip.lord@russet.org.uk>
+Reply-To: "Craig Jennings" <c@cjennings.net>
+From: "Craig Jennings" <c@cjennings.net>
+X-Pm-Content-Encryption: on-compose
+X-Pm-Origin: internal
+Subject: Help with org-drill maintenance?
+Message-Id: <20260429042145.700159.90560f27@cjennings.net>
+Date: Wed, 29 Apr 2026 09:21:49 +0000
+Mime-Version: 1.0
+X-Pm-Recipient-Authentication: phillip.lord%40russet.org.uk=none
+X-Pm-Recipient-Encryption: phillip.lord%40russet.org.uk=none
+X-TUID: 0ibZsTESZoKj
+
+Hi Phillip,
+
+I've been using org-drill daily for several years, mostly for language and =
+concept review. It's been a quiet, reliable part of my workflow. Thanks for=
+ the work that went into building and maintaining it.
+
+I've been carrying a small fork at github.com/cjennings/org-drill with a ha=
+ndful of fixes: timestamp parsing edge cases, a window-corruption fix in me=
+rge-buffers, a customizable lapse threshold. Recently I noticed several ope=
+n MRs sitting on the upstream. Some are Org 9.6 timestamp-format compatibil=
+ity patches from late 2024. One is a display-buffer calling-convention fix =
+from this March. Each looks like a one-line keeper.
+
+If you'd rather not spend bandwidth on org-drill these days, I'd be glad to=
+ help. A few options, in order of how much you'd want to delegate:
+
+1. Push rights on phillord/org-drill so I can review and merge the queued M=
+Rs.
+2. A formal hand-over of maintainership, with credit and contributor histor=
+y preserved. I've done this before and know you have as well. I already mai=
+ntain a few Emacs packages, including emacs-wttrin.=20
+3. No formal change. I'd consolidate the queued MRs into a clean batch agai=
+nst your current master, and you'd just need to skim and merge.
+
+Any of those works. If none fit, no worries. I'll keep my fork up to date a=
+nd contribute back when I can.
+
+Best,
+Craig
