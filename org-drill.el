@@ -3782,19 +3782,36 @@ non-nil; otherwise the mode is a no-op for fontification."
 
 (defun org-drill-buffer-has-cards-p ()
   "Return non-nil if the current buffer contains a drill card — a heading
-tagged with `org-drill-question-tag' or `org-drill-leitner-tag'."
+tagged with `org-drill-question-tag' or `org-drill-leitner-tag'.
+
+The tag may sit on the heading itself, on an ancestor heading (the
+ancestor line carries the literal tag, so the per-heading scan still
+matches), or be applied file-wide via `#+FILETAGS:'.  The file-tag case
+is checked separately because the tag never appears on a heading line
+there — the upstream bug where filetag-only decks failed to auto-enable
+`org-drill-mode'."
   (save-excursion
     (save-restriction
       (widen)
-      (goto-char (point-min))
-      (let ((case-fold-search t))
-        (re-search-forward
-         (concat "^\\*+ .*:\\(?:"
-                 (regexp-quote org-drill-question-tag)
-                 "\\|"
-                 (regexp-quote org-drill-leitner-tag)
-                 "\\):")
-         nil t)))))
+      (let ((case-fold-search t)
+            (tags (concat "\\(?:"
+                          (regexp-quote org-drill-question-tag)
+                          "\\|"
+                          (regexp-quote org-drill-leitner-tag)
+                          "\\)")))
+        (or
+         ;; Per-heading tag (also catches inheritance from a tagged ancestor).
+         (progn
+           (goto-char (point-min))
+           (re-search-forward (concat "^\\*+ .*:" tags ":") nil t))
+         ;; File-wide tag via #+FILETAGS:, in either the space-separated or
+         ;; colon-delimited syntax.  The [: \t] boundaries keep a value like
+         ;; `drilldown' from matching `drill'.
+         (progn
+           (goto-char (point-min))
+           (re-search-forward
+            (concat "^#\\+FILETAGS:.*[: \t]" tags "\\(?:[: \t]\\|$\\)")
+            nil t)))))))
 
 (defun org-drill-maybe-enable-mode ()
   "Enable `org-drill-mode' when appropriate for the current buffer.
