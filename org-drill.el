@@ -51,6 +51,7 @@
 
 ;;; Code:
 
+(require 'calendar)
 (require 'cl-lib)
 (require 'eieio)
 (require 'org)
@@ -4550,6 +4551,1250 @@ A diagnostic command for decks that mix the two systems."
              (+ number-drill-entries
                 (+ (length org-drill-leitner-boxed-entries)
                    (length org-drill-leitner-unboxed-entries))))))
+
+;;; Statistics dashboard: step-2 aggregation and rendering layer.
+;;
+;; Aggregators, section renderers, and the dashboard UI shell built on
+;; the step-1 session-record/session-log data layer above.
+
+;;; Statistics dashboard: customization and shared primitives
+
+;; The `org-drill-statistics' defgroup already exists in org-drill.el
+;; (around line 87) as a sibling of `org-drill-session'.  These
+;; defcustoms attach to it; do not redefine the group.
+
+(defcustom org-drill-statistics-trend-days 90
+  "Number of days the statistics dashboard trend section spans.
+Daily and weekly aggregates are computed over the most recent window
+of this many days, ending today.  Weekly aggregates additionally cap at
+the last 12 weeks."
+  :type 'integer
+  :group 'org-drill-statistics)
+
+(defcustom org-drill-statistics-forecast-days 7
+  "Number of days the statistics dashboard forecast section spans.
+Cards are bucketed into this many upcoming days by their SCHEDULED
+day, starting today."
+  :type 'integer
+  :group 'org-drill-statistics)
+
+(defcustom org-drill-statistics-attention-row-limit 10
+  "Maximum rows shown per needs-attention table on the dashboard.
+Tables that would exceed this length are truncated and gain a
+\"+N more\" footer naming the number of hidden rows."
+  :type 'integer
+  :group 'org-drill-statistics)
+
+(defcustom org-drill-statistics-leech-quality-threshold 2.5
+  "Average-quality ceiling below which a card counts as a leech candidate.
+A card is flagged when its DRILL_FAILURE_COUNT is at least
+`org-drill-leech-failure-threshold' and its DRILL_AVERAGE_QUALITY is
+strictly less than this value."
+  :type 'number
+  :group 'org-drill-statistics)
+
+;;; Shared pure primitives for the aggregation helpers.
+;;
+;; These are small, side-effect-free building blocks reused by the
+;; trend, forecast, distribution, and needs-attention aggregators.  Day
+;; numbers are absolute integer day counts (`time-to-days'), so they
+;; can be compared and subtracted directly without timezone surprises.
+
+(defun org-drill-statistics--today-day ()
+  "Return today's absolute day number as an integer.
+This is `time-to-days' of the current time.  It is factored out so
+tests can redefine it to a fixed day without mocking the clock."
+  (time-to-days (current-time)))
+
+(defun org-drill-statistics--record-day (record)
+  "Return the integer day number of RECORD's start time.
+RECORD is an `org-drill-session-record'; its start-time slot is a float
+as produced by `float-time'.  The result is an absolute day number, the
+same scale as `org-drill-statistics--today-day'."
+  (time-to-days
+   (seconds-to-time (org-drill-session-record-start-time record))))
+
+(defun org-drill-statistics--filter-log (log &optional algorithm)
+  "Return the records in LOG whose algorithm matches ALGORITHM.
+LOG is a list of `org-drill-session-record'.  When ALGORITHM is nil,
+return LOG unchanged (all algorithms).  Otherwise keep only records
+whose algorithm slot is `eq' to ALGORITHM.  The original list is not
+modified."
+  (if (null algorithm)
+      log
+    (cl-remove-if-not
+     (lambda (record)
+       (eq (org-drill-session-record-algorithm record) algorithm))
+     log)))
+
+(defun org-drill-statistics--log-since (log cutoff-float)
+  "Return the records in LOG started at or after CUTOFF-FLOAT.
+LOG is a list of `org-drill-session-record'.  CUTOFF-FLOAT is a float
+in the same units as `float-time' (and the records' start-time slot).
+A record is kept when its start-time is greater than or equal to
+CUTOFF-FLOAT.  The original list is not modified."
+  (cl-remove-if-not
+   (lambda (record)
+     (>= (org-drill-session-record-start-time record) cutoff-float))
+   log))
+
+(defcustom org-drill-statistics-distribution-bar-width 40
+  "Maximum width, in block characters, of a distribution histogram bar.
+The quality with the highest count fills this many blocks; every other
+quality's bar is scaled proportionally against it.  A larger value makes
+the histogram wider on the dashboard."
+  :type 'integer
+  :group 'org-drill-statistics)
+
+(defun org-drill-statistics--render-distribution (histogram)
+  "Return the quality-distribution section as a string.
+HISTOGRAM is a 6-element vector of integer counts for qualities 0..5, as
+produced by `org-drill-statistics--quality-histogram': element I is the
+number of times quality I was rated.
+
+The result begins with the section subheading \"** Quality
+Distribution\" and contains one row per quality 0..5.  Each row shows the
+quality number, a horizontal bar of repeated block characters, the
+absolute count, and that quality's percentage of the total ratings.  The
+longest bar is `org-drill-statistics-distribution-bar-width' blocks wide
+and the others scale against the largest count, so the bars stay
+proportional.  A quality with a zero count renders an empty bar but is
+still listed, so all six rows are always present.
+
+When the histogram is empty (every count zero, no ratings recorded), the
+percentages are all 0 and a short note replaces the bars' meaning, but
+the six rows are still emitted so the layout is stable.  This function is
+pure: it returns a string and performs no buffer or display side
+effects."
+  (let* ((counts (append histogram nil))
+         (total (apply #'+ counts))
+         (max-count (apply #'max counts))
+         (width (max 1 org-drill-statistics-distribution-bar-width))
+         (block ?\x2588)
+         (lines nil))
+    (dotimes (q 6)
+      (let* ((count (nth q counts))
+             (percent (if (> total 0)
+                          (round (* 100.0 (/ (float count) total)))
+                        0))
+             (bar-len (if (> max-count 0)
+                          (round (* (/ (float count) max-count) width))
+                        0))
+             (bar (make-string bar-len block))
+             (padded (concat bar
+                             (make-string (max 0 (- width (length bar)))
+                                          ?\s))))
+        (push (format "%d  %s  %4d  %3d%%"
+                      q padded count percent)
+              lines)))
+    (concat "** Quality Distribution\n"
+            (if (> total 0)
+                (format "Total ratings: %d\n" total)
+              "No quality ratings recorded yet.\n")
+            (mapconcat #'identity (nreverse lines) "\n")
+            "\n")))
+
+(defun org-drill-statistics--reviews-by-day (log &optional days)
+  "Return a vector of review COUNTS per day over the last DAYS.
+LOG is a list of `org-drill-session-record'; order does not matter
+here.  DAYS defaults to `org-drill-statistics-trend-days'.  A
+non-positive DAYS is clamped to 1.
+
+The result has one slot per day, oldest to newest, covering the window
+that ends today and spans DAYS days inclusive: slot 0 is the oldest day
+in the window, the final slot is today.  A day's count is the sum of
+\(length qualities) across every record whose start day falls in the
+window.  Records that fall outside the window, in the past or the
+future, are ignored.  Empty days are zero-filled.  A record with a nil
+qualities slot contributes zero.
+
+Day numbers come from `org-drill-statistics--record-day' and
+`org-drill-statistics--today-day', so the window aligns on absolute
+calendar days and the helper stays testable by redefining those."
+  (let* ((days (max 1 (or days org-drill-statistics-trend-days)))
+         (today (org-drill-statistics--today-day))
+         (start-day (- today (1- days)))
+         (counts (make-vector days 0)))
+    (dolist (record log counts)
+      (let* ((day (org-drill-statistics--record-day record))
+             (idx (- day start-day)))
+        (when (and (>= idx 0) (< idx days))
+          (let ((qualities (org-drill-session-record-qualities record)))
+            (aset counts idx
+                  (+ (aref counts idx)
+                     (if qualities (length qualities) 0)))))))))
+
+(defun org-drill-statistics--pass-rate-by-day (log &optional days)
+  "Return a vector of daily pass rates over the last DAYS, oldest first.
+LOG is a list of `org-drill-session-record', newest first as stored in
+`org-drill-session-log'.  DAYS defaults to `org-drill-statistics-trend-days'.
+
+The result is a vector of length DAYS.  Element 0 is the oldest day in
+the window and the final element is today, so the vector reads left to
+right in chronological order, matching sparkline rendering.
+
+Each element is an integer pass rate, 0 to 100, for that day, or nil
+when no qualities were recorded that day.  A day's pass rate is the
+percentage of that day's qualities that are passes across every record
+started that day.  A quality is a pass when it is strictly greater than
+`org-drill-failure-quality'.  Records outside the window are ignored.
+
+The function is pure with respect to LOG: it reads only the record
+slots and the failure-quality threshold.  Today is taken from
+`org-drill-statistics--today-day', which tests may redefine to a fixed
+day."
+  (let* ((days (or days org-drill-statistics-trend-days))
+         (days (max 1 days))
+         (today (org-drill-statistics--today-day))
+         (oldest (- today (1- days)))
+         (passes (make-vector days 0))
+         (totals (make-vector days 0))
+         (threshold org-drill-failure-quality))
+    (dolist (record log)
+      (let* ((day (org-drill-statistics--record-day record))
+             (idx (- day oldest)))
+        (when (and (>= idx 0) (< idx days))
+          (let ((qualities (org-drill-session-record-qualities record)))
+            (when qualities
+              (dotimes (qi (length qualities))
+                (let ((q (aref qualities qi)))
+                  (aset totals idx (1+ (aref totals idx)))
+                  (when (> q threshold)
+                    (aset passes idx (1+ (aref passes idx)))))))))))
+    (let ((result (make-vector days nil)))
+      (dotimes (i days)
+        (let ((total (aref totals i)))
+          (when (> total 0)
+            (aset result i (round (* 100.0 (/ (float (aref passes i))
+                                              total)))))))
+      result)))
+
+(defconst org-drill-statistics--sparkline-chars "▁▂▃▄▅▆▇█"
+  "Eight-level quadrant-block charset for sparklines, low to high.
+Index 0 is the shortest block, index 7 the full block.  Used by
+`org-drill-statistics--sparkline' to map scaled values to glyphs.")
+
+(defun org-drill-statistics--sparkline (numbers &optional max)
+  "Render NUMBERS as a quadrant-block sparkline string.
+NUMBERS is a sequence (list or vector) of non-negative numbers, with
+nil permitted for a missing data point.  Each non-nil value is scaled
+against MAX and mapped to one of eight block glyphs in
+`org-drill-statistics--sparkline-chars', low to high.  Each nil value
+renders as a single space, preserving column alignment.
+
+MAX is the value mapped to the tallest block.  When MAX is nil it
+defaults to the largest non-nil value in NUMBERS.  A value at or above
+MAX renders as the full block; intermediate values scale linearly.
+
+Edge cases handled without error:
+- Empty NUMBERS returns the empty string.
+- All-nil NUMBERS returns a string of spaces, one per entry.
+- A MAX of zero (all values zero, or an explicit zero MAX) renders
+  every non-nil value as the lowest block, since no value exceeds the
+  ceiling and division by zero is avoided.
+
+Values are clamped to the inclusive 0..MAX range before scaling, so a
+value above MAX still maps to the full block rather than overflowing
+the charset."
+  (let* ((seq (append numbers nil))
+         (effective-max
+          (or max
+              (let ((non-nil (delq nil (copy-sequence seq))))
+                (if non-nil (apply #'max non-nil) 0))))
+         (top (1- (length org-drill-statistics--sparkline-chars))))
+    (mapconcat
+     (lambda (n)
+       (cond
+        ((null n) " ")
+        ((or (null effective-max) (<= effective-max 0))
+         (substring org-drill-statistics--sparkline-chars 0 1))
+        (t
+         (let* ((clamped (max 0 (min n effective-max)))
+                (index (round (* (/ (float clamped) effective-max) top))))
+           (substring org-drill-statistics--sparkline-chars
+                      index (1+ index))))))
+     seq
+     "")))
+
+;;; Weekly trend aggregation for the statistics dashboard.
+
+(defun org-drill-statistics--week-start-day (day)
+  "Return the absolute day number of the Monday starting DAY's week.
+DAY is an absolute day number as produced by `time-to-days'.  Weeks
+start on Monday, matching ISO week conventions.  The result is itself an
+absolute day number and is `<=' DAY.  Pure integer arithmetic, so it is
+deterministic across timezones."
+  (- day (mod (- day 1) 7)))
+
+(defun org-drill-statistics--avg-duration-min (records)
+  "Return the mean session duration of RECORDS in minutes, as a float.
+RECORDS is a list of `org-drill-session-record'.  Each duration is
+end-time minus start-time, divided by 60.  Returns 0.0 when RECORDS is
+empty."
+  (if (null records)
+      0.0
+    (/ (cl-reduce
+        (lambda (acc record)
+          (+ acc
+             (/ (- (org-drill-session-record-end-time record)
+                   (org-drill-session-record-start-time record))
+                60.0)))
+        records
+        :initial-value 0.0)
+       (float (length records)))))
+
+(defun org-drill-statistics--weekly-aggregates (log &optional weeks)
+  "Return per-week aggregate statistics for the most recent WEEKS.
+LOG is a list of `org-drill-session-record' in any order.  WEEKS
+defaults to 12 and bounds how many weeks the result spans, ending with
+the week that contains today.  WEEKS must be a positive integer.
+
+The result is a list of plists, oldest week first, one per week in the
+window even when a week has no sessions.  Each plist has these keys:
+
+  :week-start        absolute day number of that week's Monday
+  :reviews           total quality ratings entered across the week
+  :pass-percent      pooled pass percentage (0 when the week has none)
+  :avg-duration-min  mean session duration in minutes, as a float
+
+Weeks start on Monday.  REVIEWS counts every entry in each record's
+qualities vector, so a week's reviews is the sum over its sessions.
+PASS-PERCENT is recomputed from the week's pooled qualities via
+`org-drill--compute-pass-percent', not averaged from the stored
+per-session percentages, so multi-session weeks stay correctly weighted.
+This function is pure: it reads no org entries and does not modify LOG."
+  (setq weeks (or weeks 12))
+  (unless (and (integerp weeks) (>= weeks 1))
+    (error "WEEKS must be a positive integer, got %s" weeks))
+  (let* ((this-week (org-drill-statistics--week-start-day
+                     (org-drill-statistics--today-day)))
+         (oldest (- this-week (* 7 (1- weeks))))
+         (buckets (make-vector weeks nil)))
+    (dolist (record log)
+      (let* ((wk (org-drill-statistics--week-start-day
+                  (org-drill-statistics--record-day record)))
+             (idx (/ (- wk oldest) 7)))
+        (when (and (>= idx 0) (< idx weeks)
+                   (zerop (mod (- wk oldest) 7)))
+          (aset buckets idx (cons record (aref buckets idx))))))
+    (let ((result nil))
+      (dotimes (i weeks)
+        (let* ((idx (- weeks 1 i))
+               (records (aref buckets idx))
+               (week-start (+ oldest (* 7 idx)))
+               (qualities (apply #'vconcat
+                                 (mapcar #'org-drill-session-record-qualities
+                                         records))))
+          (push (list :week-start week-start
+                      :reviews (length qualities)
+                      :pass-percent
+                      (org-drill--compute-pass-percent qualities)
+                      :avg-duration-min
+                      (org-drill-statistics--avg-duration-min records))
+                result)))
+      result)))
+
+(defun org-drill-statistics--quality-histogram (log)
+  "Return a 6-element vector of quality counts across every record in LOG.
+LOG is a list of `org-drill-session-record'.  Element I of the result is
+the total number of times quality I was entered across all records'
+qualities vectors, for I in 0..5.  Qualities outside the 0..5 range are
+ignored defensively so a malformed record cannot corrupt the histogram.
+A record whose qualities slot is nil contributes nothing.  The original
+log and its records are not modified."
+  (let ((histogram (make-vector 6 0)))
+    (dolist (record log)
+      (let ((qualities (org-drill-session-record-qualities record)))
+        (when qualities
+          (mapc
+           (lambda (quality)
+             (when (and (integerp quality) (>= quality 0) (<= quality 5))
+               (aset histogram quality (1+ (aref histogram quality)))))
+           (append qualities nil)))))
+    histogram))
+
+;;; Statistics dashboard: card-population overview aggregator.
+
+(defun org-drill-statistics--overview-counts (&optional scope)
+  "Return a card-population overview plist for the drill entries in SCOPE.
+SCOPE is a value understood by `org-drill-current-scope' (a symbol such
+as `file', `directory', `agenda', or a list of files); nil means the
+current value of `org-drill-scope'.  The plist has four keys:
+
+  :total   every genuine drill card seen (any non-nil entry status).
+  :new     cards never reviewed (status :new).
+  :mature  cards with an established interval (status :young, :old, or
+           :overdue), counted together as the mature population.
+  :lapsed  cards whose last review failed (status :failed).
+
+The mapping is driven by `org-drill-entry-status', which classifies the
+entry at point into one of nil, :unscheduled, :future, :new, :failed,
+:overdue, :young, or :old.  Cards classified :unscheduled or :future are
+real drill cards, so they count toward :total, but they are neither new,
+mature, nor lapsed, so they are absent from those three buckets.  Entries
+whose status is nil (non-drill headings and skippable empty cards) are
+ignored entirely and do not count toward :total.
+
+A fresh, non-cram `org-drill-session' is created for the classification
+so the result reflects the cards' own scheduling state rather than any
+in-progress drill session."
+  (let ((session (org-drill-session))
+        (total 0)
+        (new 0)
+        (mature 0)
+        (lapsed 0))
+    (org-drill-map-entries
+     (lambda ()
+       (let ((status (car (org-drill-entry-status session))))
+         (when status
+           (cl-incf total)
+           (cl-case status
+             (:new (cl-incf new))
+             ((:young :old :overdue) (cl-incf mature))
+             (:failed (cl-incf lapsed))))))
+     scope)
+    (list :total total :new new :mature mature :lapsed lapsed)))
+
+;;; Statistics dashboard: needs-attention selectors (aggregation 7/8)
+;;
+;; These three selectors return lists of (HEADING . POS) cons cells for
+;; the dashboard's needs-attention section: leech candidates,
+;; long-overdue cards, and forgotten-new cards.  POS is the integer
+;; buffer position of the entry's heading (`point' at the heading), so
+;; the renderer can build a follow link.
+;;
+;; The org traversal is isolated in a single collector,
+;; `org-drill-statistics--collect-attention-data', which gathers one
+;; plist per drill entry.  Every predicate and sort then operates on
+;; that plain data, so the classification and ordering logic is unit
+;; testable with a `with-temp-buffer' fixture and without touching the
+;; clock.  Day-based fields are stored as integers relative to a
+;; supplied "today" day number, again so tests stay deterministic.
+
+(cl-defstruct (org-drill-statistics--entry-attention-data
+               (:constructor org-drill-statistics--make-entry-attention-data)
+               (:copier nil))
+  "Per-entry data used by the needs-attention selectors.
+HEADING is the cleaned outline heading string.  POS is the integer
+buffer position of the heading.  FAILURE-COUNT is DRILL_FAILURE_COUNT as
+an integer (0 when absent).  AVG-QUALITY is DRILL_AVERAGE_QUALITY as a
+float, or nil when absent.  DAYS-SINCE-REVIEW is the integer day count
+since DRILL_LAST_REVIEWED, or nil when never reviewed.  DAYS-SINCE-ADDED
+is the integer day count since DATE_ADDED, or nil when absent.
+TOTAL-REPEATS is DRILL_TOTAL_REPEATS as an integer (0 when absent)."
+  heading pos failure-count avg-quality
+  days-since-review days-since-added total-repeats)
+
+;; Short aliases for the long struct accessors, used by the sort
+;; comparators below so the comparator lines stay readable.
+(defalias 'org-drill-statistics--ad-avg
+  #'org-drill-statistics--entry-attention-data-avg-quality)
+(defalias 'org-drill-statistics--ad-fails
+  #'org-drill-statistics--entry-attention-data-failure-count)
+(defalias 'org-drill-statistics--ad-review
+  #'org-drill-statistics--entry-attention-data-days-since-review)
+(defalias 'org-drill-statistics--ad-added
+  #'org-drill-statistics--entry-attention-data-days-since-added)
+
+(defun org-drill-statistics--collect-attention-data (&optional scope today-day)
+  "Collect `org-drill-statistics--entry-attention-data' for each drill entry.
+SCOPE is passed through to `org-drill-map-entries' to bound the
+traversal, defaulting to `org-drill-scope'.  TODAY-DAY is the absolute
+day number treated as today, defaulting to
+`org-drill-statistics--today-day'; it is factored out so callers and
+tests can pin the reference day.
+
+The point is on each drill entry's heading while its data is read, so
+this must run inside an org buffer.  Returns a list of structs, one per
+drill entry, in document order."
+  (let ((today (or today-day (org-drill-statistics--today-day))))
+    (org-drill-map-entries
+     (lambda ()
+       (org-drill-statistics--entry-attention-data-at-point today))
+     scope)))
+
+(defun org-drill-statistics--entry-attention-data-at-point (today-day)
+  "Read needs-attention data for the drill entry at point.
+TODAY-DAY is the absolute day number treated as today.  Returns an
+`org-drill-statistics--entry-attention-data' struct.  This reads the
+DRILL_* and DATE_ADDED properties via `org-entry-get' and the heading
+via `org-get-heading', so the point must be on a drill heading."
+  (let* ((pos (point))
+         (heading (org-get-heading t t t t))
+         (failure-raw (org-entry-get pos "DRILL_FAILURE_COUNT"))
+         (avg-raw (org-entry-get pos "DRILL_AVERAGE_QUALITY"))
+         (last-raw (org-entry-get pos "DRILL_LAST_REVIEWED"))
+         (added-raw (org-entry-get pos "DATE_ADDED"))
+         (repeats-raw (org-entry-get pos "DRILL_TOTAL_REPEATS")))
+    (org-drill-statistics--make-entry-attention-data
+     :heading (or heading "")
+     :pos pos
+     :failure-count (if failure-raw (string-to-number failure-raw) 0)
+     :avg-quality (and avg-raw (string-to-number avg-raw))
+     :days-since-review
+     (org-drill-statistics--days-since-org-timestamp last-raw today-day)
+     :days-since-added
+     (org-drill-statistics--days-since-org-timestamp added-raw today-day)
+     :total-repeats (if repeats-raw (string-to-number repeats-raw) 0))))
+
+(defun org-drill-statistics--days-since-org-timestamp (timestamp today-day)
+  "Return integer days from org TIMESTAMP string to TODAY-DAY.
+TIMESTAMP is an org timestamp string (active or inactive) or nil.
+TODAY-DAY is an absolute day number as from `time-to-days'.  Returns the
+difference TODAY-DAY minus the timestamp's day, so a value reviewed
+today yields 0 and an older review yields a positive count.  Returns nil
+when TIMESTAMP is nil or cannot be parsed."
+  (when (and timestamp (not (string-empty-p timestamp)))
+    (condition-case nil
+        (- today-day
+           (time-to-days
+            (apply #'encode-time (org-parse-time-string timestamp))))
+      (error nil))))
+
+;;; Pure predicates and the row cap.
+
+(defun org-drill-statistics--leech-candidate-p (data)
+  "Non-nil when DATA describes a leech candidate.
+DATA is an `org-drill-statistics--entry-attention-data'.  A card is a
+leech candidate when its failure count is at least
+`org-drill-leech-failure-threshold' and its average quality is
+known and strictly below `org-drill-statistics-leech-quality-threshold'.
+A card with no recorded average quality is not flagged, since the
+quality criterion cannot be evaluated."
+  (let ((avg (org-drill-statistics--entry-attention-data-avg-quality data)))
+    (and (>= (org-drill-statistics--entry-attention-data-failure-count data)
+             org-drill-leech-failure-threshold)
+         avg
+         (< avg org-drill-statistics-leech-quality-threshold))))
+
+(defun org-drill-statistics--long-overdue-p (data)
+  "Non-nil when DATA describes a long-overdue card.
+DATA is an `org-drill-statistics--entry-attention-data'.  A card is
+long overdue when it has a recorded last-review date and that review is
+more than `org-drill-lapse-threshold-days' days ago.  A card that was
+never reviewed has no overdue measure and is not flagged here."
+  (let ((days (org-drill-statistics--entry-attention-data-days-since-review
+               data)))
+    (and days (> days org-drill-lapse-threshold-days))))
+
+(defun org-drill-statistics--forgotten-new-p (data)
+  "Non-nil when DATA describes a forgotten-new card.
+DATA is an `org-drill-statistics--entry-attention-data'.  A card is
+forgotten-new when it was added at least 14 days ago and has never been
+repeated, that is its total repeats are zero.  A card with no recorded
+add date is not flagged, since its age cannot be evaluated."
+  (let ((added (org-drill-statistics--entry-attention-data-days-since-added
+                data)))
+    (and added
+         (>= added 14)
+         (= (org-drill-statistics--entry-attention-data-total-repeats data)
+            0))))
+
+(defun org-drill-statistics--cap-rows (rows)
+  "Cap ROWS at `org-drill-statistics-attention-row-limit' entries.
+ROWS is a list.  When it is no longer than the limit, return it
+unchanged.  Otherwise return its first LIMIT elements; the renderer is
+responsible for the trailing \"+N more\" footer using the original
+length.  ROWS is not modified."
+  (let ((limit org-drill-statistics-attention-row-limit))
+    (if (<= (length rows) limit)
+        rows
+      (cl-subseq rows 0 limit))))
+
+;;; The three public selectors.
+;;
+;; Each filters the collected per-entry data with its predicate, sorts
+;; per the spec, maps to (HEADING . POS), and caps the row count.
+
+(defun org-drill-statistics--leech-candidates (&optional scope)
+  "Return capped leech candidates as a list of (HEADING . POS).
+SCOPE bounds the traversal, defaulting to `org-drill-scope'.  Candidates
+satisfy `org-drill-statistics--leech-candidate-p' and are sorted worst
+first by ascending average quality, breaking ties by descending failure
+count.  The list is capped at `org-drill-statistics-attention-row-limit'
+rows; the full count is available to the caller via a fresh scan if a
+\"+N more\" footer is needed."
+  (let* ((data (cl-remove-if-not
+                #'org-drill-statistics--leech-candidate-p
+                (org-drill-statistics--collect-attention-data scope)))
+         (sorted
+          (sort data
+                (lambda (a b)
+                  (let ((qa (org-drill-statistics--ad-avg a))
+                        (qb (org-drill-statistics--ad-avg b)))
+                    (if (= qa qb)
+                        (> (org-drill-statistics--ad-fails a)
+                           (org-drill-statistics--ad-fails b))
+                      (< qa qb)))))))
+    (org-drill-statistics--cap-rows
+     (mapcar (lambda (d)
+               (cons (org-drill-statistics--entry-attention-data-heading d)
+                     (org-drill-statistics--entry-attention-data-pos d)))
+             sorted))))
+
+(defun org-drill-statistics--long-overdue (&optional scope)
+  "Return capped long-overdue cards as a list of (HEADING . POS).
+SCOPE bounds the traversal, defaulting to `org-drill-scope'.  Cards
+satisfy `org-drill-statistics--long-overdue-p' and are sorted most
+overdue first, by descending days since last review.  The list is capped
+at `org-drill-statistics-attention-row-limit' rows."
+  (let* ((data (cl-remove-if-not
+                #'org-drill-statistics--long-overdue-p
+                (org-drill-statistics--collect-attention-data scope)))
+         (sorted
+          (sort data
+                (lambda (a b)
+                  (> (org-drill-statistics--ad-review a)
+                     (org-drill-statistics--ad-review b))))))
+    (org-drill-statistics--cap-rows
+     (mapcar (lambda (d)
+               (cons (org-drill-statistics--entry-attention-data-heading d)
+                     (org-drill-statistics--entry-attention-data-pos d)))
+             sorted))))
+
+(defun org-drill-statistics--forgotten-new (&optional scope)
+  "Return capped forgotten-new cards as a list of (HEADING . POS).
+SCOPE bounds the traversal, defaulting to `org-drill-scope'.  Cards
+satisfy `org-drill-statistics--forgotten-new-p' and are sorted oldest
+first, by descending days since they were added.  The list is capped at
+`org-drill-statistics-attention-row-limit' rows."
+  (let* ((data (cl-remove-if-not
+                #'org-drill-statistics--forgotten-new-p
+                (org-drill-statistics--collect-attention-data scope)))
+         (sorted
+          (sort data
+                (lambda (a b)
+                  (> (org-drill-statistics--ad-added a)
+                     (org-drill-statistics--ad-added b))))))
+    (org-drill-statistics--cap-rows
+     (mapcar (lambda (d)
+               (cons (org-drill-statistics--entry-attention-data-heading d)
+                     (org-drill-statistics--entry-attention-data-pos d)))
+             sorted))))
+
+;;; Forecast aggregator (helper 8/8).
+;;
+;; The forecast answers: of the scheduled cards in scope, how many come
+;; due on each of the next DAYS days, starting today?  The org-reading
+;; part (collecting SCHEDULED day numbers from entries in scope) is kept
+;; separate from the pure bucketing math so the math is unit-testable
+;; without an org buffer.
+
+(defun org-drill-statistics--bucket-forecast-days
+    (scheduled-days today-day days)
+  "Bucket SCHEDULED-DAYS into a DAYS-long forecast vector.
+SCHEDULED-DAYS is a list of absolute integer day numbers (the scale of
+`time-to-days'), one per scheduled card.  TODAY-DAY is today's absolute
+day number.  DAYS is the number of forecast buckets.
+
+Return a list of DAYS integers.  Element I is the number of entries in
+SCHEDULED-DAYS whose day equals TODAY-DAY plus I, so index 0 counts
+cards due today and the last index counts cards due TODAY-DAY plus DAYS
+minus one.  Cards scheduled in the past or beyond the window are not
+counted.  When DAYS is zero or negative the result is the empty list."
+  (let ((buckets (if (> days 0) (make-vector days 0) (vector))))
+    (when (> days 0)
+      (dolist (day scheduled-days)
+        (let ((offset (- day today-day)))
+          (when (and (>= offset 0) (< offset days))
+            (aset buckets offset (1+ (aref buckets offset)))))))
+    (append buckets nil)))
+
+(defun org-drill-statistics--scheduled-days (&optional scope)
+  "Return the SCHEDULED day numbers of drill entries in SCOPE.
+SCOPE accepts the same values as `org-drill-scope'; nil uses the
+current value.  Walk the drill entries in scope with
+`org-drill-map-entries' and collect, for each entry that carries a
+SCHEDULED time, its absolute integer day number (`time-to-days' of the
+scheduled time).  Entries without a SCHEDULED time are skipped.  The
+returned list is in entry-traversal order and may contain duplicate
+days (several cards due the same day)."
+  (delq nil
+        (org-drill-map-entries
+         (lambda ()
+           (let ((scheduled (org-get-scheduled-time (point))))
+             (when scheduled
+               (time-to-days scheduled))))
+         scope)))
+
+(defun org-drill-statistics--forecast (&optional scope days)
+  "Return the upcoming-due forecast for drill entries in SCOPE.
+SCOPE accepts the same values as `org-drill-scope'; nil uses the
+current value.  DAYS is the number of forecast buckets and defaults to
+`org-drill-statistics-forecast-days'.
+
+The result is a list of DAYS integers.  Element I counts the cards in
+scope whose SCHEDULED date falls on today plus I, so index 0 is due
+today and the last index is due DAYS minus one days out.  Cards
+scheduled in the past or beyond the window are not counted, and cards
+with no SCHEDULED time are ignored."
+  (let ((days (or days org-drill-statistics-forecast-days)))
+    (org-drill-statistics--bucket-forecast-days
+     (org-drill-statistics--scheduled-days scope)
+     (org-drill-statistics--today-day)
+     days)))
+
+;;; Statistics dashboard: needs-attention section renderer (render 4/5).
+;;
+;; `org-drill-statistics--render-attention' returns the section text as a
+;; string so it is unit testable without a live dashboard buffer.  It runs
+;; a single org scan via `org-drill-statistics--collect-attention-data',
+;; then filters, sorts, caps, and footers each of the three categories.
+;; Doing one scan (rather than calling the three public selectors, which
+;; each scan and cap) gives the pre-cap totals needed for the "+N more"
+;; footers for free.
+
+(defun org-drill-statistics--card-link (heading pos)
+  "Return an org bracket link to a drill card heading.
+HEADING is the card's outline heading string, used as the link
+description.  POS is the integer buffer position of the heading, carried
+in the link path so the dashboard's RET handler can jump to the card.
+The path has the form \"org-drill-card:POS\".  Any closing bracket in
+HEADING is replaced so a literal \"]]\" cannot terminate the link early.
+An empty or nil HEADING falls back to a position-based description."
+  (let* ((desc (if (and heading (not (string-empty-p heading)))
+                   heading
+                 (format "card at %d" pos)))
+         (safe (replace-regexp-in-string "]" "}" desc)))
+    (format "[[org-drill-card:%d][%s]]" pos safe)))
+
+(defun org-drill-statistics--render-attention-table
+    (title rows total empty-note)
+  "Render one needs-attention subsection as an org string.
+TITLE is the third-level heading text for the subsection.  ROWS is a
+list of (HEADING . POS) cons cells, already capped at
+`org-drill-statistics-attention-row-limit' and already sorted.  TOTAL is
+the full count of matching cards before capping, used for the
+\"+N more\" footer.  EMPTY-NOTE is the line shown when ROWS is empty.
+
+The returned string ends with a trailing newline.  When ROWS is
+non-empty it contains a single-column org table of card links, followed
+by a \"+N more\" footer line naming the hidden count when TOTAL exceeds
+the number of rows shown."
+  (let ((shown (length rows)))
+    (concat
+     (format "*** %s\n" title)
+     (if (null rows)
+         (format "%s\n" empty-note)
+       (concat
+        "| Card |\n"
+        "|------|\n"
+        (mapconcat
+         (lambda (row)
+           (format "| %s |"
+                   (org-drill-statistics--card-link (car row) (cdr row))))
+         rows
+         "\n")
+        "\n"
+        (let ((hidden (- total shown)))
+          (if (> hidden 0)
+              (format "+%d more\n" hidden)
+            "")))))))
+
+(defun org-drill-statistics--render-attention (&optional scope)
+  "Return the needs-attention dashboard section as an org string.
+SCOPE bounds the drill traversal and accepts the same values as
+`org-drill-scope'; nil uses the current value.  This must run inside an
+org buffer because it scans drill entries via
+`org-drill-statistics--collect-attention-data'.
+
+The section opens with a \"** Needs attention\" heading and contains
+three subsections, each an org table of card links:
+
+  Leech candidates   cards failing repeatedly with low average quality,
+                     worst first.
+  Long overdue       cards whose last review is well past the lapse
+                     threshold, most overdue first.
+  Forgotten new      cards added long ago and never repeated, oldest
+                     first.
+
+Each table is capped at `org-drill-statistics-attention-row-limit' rows;
+a category with more matches than the cap gains a \"+N more\" footer
+naming the hidden count.  A category with no matches shows a short note
+instead of a table.  This function returns a string and does not print,
+switch buffers, or move point beyond the traversal itself.
+
+A single collection pass feeds all three categories, so the full
+pre-cap totals are available for the footers without rescanning."
+  (let* ((data (org-drill-statistics--collect-attention-data scope))
+         (leech-all (cl-remove-if-not
+                     #'org-drill-statistics--leech-candidate-p data))
+         (overdue-all (cl-remove-if-not
+                       #'org-drill-statistics--long-overdue-p data))
+         (new-all (cl-remove-if-not
+                   #'org-drill-statistics--forgotten-new-p data))
+         (leech-sorted
+          (sort (copy-sequence leech-all)
+                (lambda (a b)
+                  (let ((qa (org-drill-statistics--ad-avg a))
+                        (qb (org-drill-statistics--ad-avg b)))
+                    (if (= qa qb)
+                        (> (org-drill-statistics--ad-fails a)
+                           (org-drill-statistics--ad-fails b))
+                      (< qa qb))))))
+         (overdue-sorted
+          (sort (copy-sequence overdue-all)
+                (lambda (a b)
+                  (> (org-drill-statistics--ad-review a)
+                     (org-drill-statistics--ad-review b)))))
+         (new-sorted
+          (sort (copy-sequence new-all)
+                (lambda (a b)
+                  (> (org-drill-statistics--ad-added a)
+                     (org-drill-statistics--ad-added b)))))
+         (to-rows
+          (lambda (structs)
+            (mapcar
+             (lambda (d)
+               (cons (org-drill-statistics--entry-attention-data-heading d)
+                     (org-drill-statistics--entry-attention-data-pos d)))
+             (org-drill-statistics--cap-rows structs)))))
+    (concat
+     "** Needs attention\n"
+     (org-drill-statistics--render-attention-table
+      "Leech candidates"
+      (funcall to-rows leech-sorted)
+      (length leech-all)
+      "No leech candidates.")
+     (org-drill-statistics--render-attention-table
+      "Long overdue"
+      (funcall to-rows overdue-sorted)
+      (length overdue-all)
+      "No long-overdue cards.")
+     (org-drill-statistics--render-attention-table
+      "Forgotten new"
+      (funcall to-rows new-sorted)
+      (length new-all)
+      "No forgotten-new cards."))))
+
+;;; Statistics dashboard: overview section renderer (render 1/5).
+;;
+;; Pure string builder.  It reads card-population counts via
+;; `org-drill-statistics--overview-counts' (which traverses the org
+;; entries in scope) and the newest session record from LOG, then
+;; returns the section text.  It never prints, switches buffers, or
+;; mutates state, so it is testable with a plain string assertion.
+
+(defun org-drill-statistics--format-last-session (record)
+  "Return the one-line \"Last session\" recap string for RECORD.
+RECORD is an `org-drill-session-record', or nil when no session has
+been logged.  When nil, return a line stating there is no session yet.
+Otherwise the line names the session date, its duration in minutes, the
+number of cards reviewed (length of the qualities vector), and the
+pass percentage.  Pure: it reads only RECORD's slots."
+  (if (null record)
+      "Last session: none recorded yet."
+    (let* ((start (org-drill-session-record-start-time record))
+           (end (org-drill-session-record-end-time record))
+           (qualities (org-drill-session-record-qualities record))
+           (reviewed (if qualities (length qualities) 0))
+           (duration-min (max 0 (round (/ (- end start) 60.0))))
+           (pass (org-drill-session-record-pass-percent record))
+           (date (format-time-string "%Y-%m-%d" (seconds-to-time start))))
+      (format
+       "Last session: %s, %d min, %d card%s reviewed, %d%% pass."
+       date duration-min reviewed (if (= reviewed 1) "" "s") pass))))
+
+(defun org-drill-statistics--render-overview (&optional scope log)
+  "Return the Overview section of the statistics dashboard as a string.
+SCOPE is passed to `org-drill-statistics--overview-counts' to bound the
+card-population traversal; nil uses the current `org-drill-scope'.  LOG
+is a list of `org-drill-session-record' newest first, defaulting to
+`org-drill-session-log'; its head supplies the \"Last session\" recap.
+
+The returned string is an org fragment: a \"** Overview\" subheading, a
+4-column org table with a header row (Total cards, New, Mature, Lapsed)
+and one data row from `org-drill-statistics--overview-counts', then a
+blank line and the one-line last-session recap.  This function is pure
+with respect to its inputs apart from the org traversal that
+`org-drill-statistics--overview-counts' performs over SCOPE; it does
+not print, switch buffers, or modify any state."
+  (let* ((log (or log org-drill-session-log))
+         (counts (org-drill-statistics--overview-counts scope))
+         (total (plist-get counts :total))
+         (new (plist-get counts :new))
+         (mature (plist-get counts :mature))
+         (lapsed (plist-get counts :lapsed))
+         (recap (org-drill-statistics--format-last-session (car log))))
+    (concat
+     "** Overview\n"
+     "| Total cards | New | Mature | Lapsed |\n"
+     "|-------------+-----+--------+--------|\n"
+     (format "| %d | %d | %d | %d |\n" total new mature lapsed)
+     "\n"
+     recap "\n")))
+
+;;; Statistics dashboard: trends render helper (render 2/5).
+;;
+;; `org-drill-statistics--render-trends' returns the Trends section as a
+;; string: a subheading, two sparkline lines (reviews per day and pass
+;; rate per day over the trend window), then an org table of the last 12
+;; weekly aggregates.  It is pure: it reads only LOG and the dashboard
+;; defcustoms, calls the aggregation helpers, and returns a string.  It
+;; never prints, inserts, or switches buffers, so it stays unit testable.
+
+(defun org-drill-statistics--format-week-start (day)
+  "Format absolute DAY number as a YYYY-MM-DD date string.
+DAY is an absolute day number on the `time-to-days' scale, as stored in
+the :week-start slot of `org-drill-statistics--weekly-aggregates'.  The
+result is the Gregorian calendar date of that day, zero-padded.  Pure
+integer-to-string conversion via `calendar-gregorian-from-absolute', so
+it is timezone independent and deterministic."
+  (let ((gregorian (calendar-gregorian-from-absolute day)))
+    (format "%04d-%02d-%02d"
+            (nth 2 gregorian)
+            (nth 0 gregorian)
+            (nth 1 gregorian))))
+
+(defun org-drill-statistics--render-weekly-table (weekly)
+  "Render WEEKLY aggregates as an org-mode table string.
+WEEKLY is a list of plists as returned by
+`org-drill-statistics--weekly-aggregates', oldest week first.  The table
+has a header row, an org separator row, and one body row per week with
+columns: Week (the Monday date), Reviews, Pass %, and Avg min (mean
+session duration in minutes, one decimal place).  The returned string
+ends with a trailing newline.  Pure string assembly: no buffer or org
+table alignment is performed, so columns are single-space padded inside
+the pipes and org realigns them when the buffer renders."
+  (let ((rows
+         (mapcar
+          (lambda (week)
+            (format "| %s | %d | %d | %.1f |"
+                    (org-drill-statistics--format-week-start
+                     (plist-get week :week-start))
+                    (plist-get week :reviews)
+                    (plist-get week :pass-percent)
+                    (plist-get week :avg-duration-min)))
+          weekly)))
+    (concat "| Week | Reviews | Pass % | Avg min |\n"
+            "|------+---------+--------+---------|\n"
+            (if rows
+                (concat (mapconcat #'identity rows "\n") "\n")
+              ""))))
+
+(defun org-drill-statistics--render-trends (log &optional algorithm)
+  "Return the Trends dashboard section for LOG as a string.
+LOG is a list of `org-drill-session-record', newest first as stored in
+`org-drill-session-log'.  ALGORITHM, when non-nil, restricts the section
+to records whose algorithm slot is `eq' to it, via
+`org-drill-statistics--filter-log'; nil includes every algorithm.
+
+The section is a string containing, in order:
+
+  - an \"* Trends\" org subheading,
+  - a reviews-per-day sparkline over the last
+    `org-drill-statistics-trend-days' days, labelled with the window,
+  - a pass-rate-per-day sparkline over the same window,
+  - an org table of the last 12 weekly aggregates (week-start date,
+    reviews, pass percentage, mean session duration in minutes).
+
+The sparklines come from `org-drill-statistics--sparkline' fed by
+`org-drill-statistics--reviews-by-day' and
+`org-drill-statistics--pass-rate-by-day'; the pass-rate sparkline is
+scaled against a fixed ceiling of 100 so the glyph heights read as
+absolute percentages rather than relative to the window's own peak.  The
+table comes from `org-drill-statistics--weekly-aggregates'.
+
+This function is pure: it reads only LOG and the dashboard defcustoms,
+returns a string, and does not print, insert, or switch buffers."
+  (let* ((filtered (org-drill-statistics--filter-log log algorithm))
+         (days org-drill-statistics-trend-days)
+         (reviews (org-drill-statistics--reviews-by-day filtered days))
+         (pass-rates (org-drill-statistics--pass-rate-by-day filtered days))
+         (weekly (org-drill-statistics--weekly-aggregates filtered 12)))
+    (concat
+     "* Trends\n"
+     (format "Reviews/day (last %d): %s\n"
+             days
+             (org-drill-statistics--sparkline reviews))
+     (format "Pass rate/day (last %d): %s\n"
+             days
+             (org-drill-statistics--sparkline pass-rates 100))
+     "\n"
+     (org-drill-statistics--render-weekly-table weekly))))
+
+;;; Statistics dashboard: forecast section renderer (render 5/5).
+;;
+;; Pure string builder for the dashboard's Forecast section.  It calls
+;; `org-drill-statistics--forecast' for the per-day counts and lays them
+;; out as a one-line org table: a header row labelling each upcoming day
+;; (Today, +1, +2, ...) and a counts row beneath it.  The function does
+;; no printing and switches no buffers, so it is unit testable by
+;; asserting on the returned string.
+
+(defun org-drill-statistics--render-forecast (&optional scope days)
+  "Return the Forecast dashboard section as an org-formatted string.
+SCOPE accepts the same values as `org-drill-scope'; nil uses the current
+value.  DAYS is the number of forecast buckets and defaults to
+`org-drill-statistics-forecast-days'.  Reading SCOPE walks org entries,
+so this must run inside an org buffer when SCOPE resolves to live cards.
+
+The returned string starts with a \"** Forecast\" subheading, then a
+one-line org table.  The table's header row labels each upcoming day:
+the first column is \"Today\", and each later column is \"+N\" for N days
+out.  The counts row beneath holds the number of cards due on each day,
+taken from `org-drill-statistics--forecast'.  A trailing newline ends
+the section so sections concatenate cleanly.
+
+When DAYS resolves to zero or fewer the forecast is empty; the section
+then carries a short note in place of the table."
+  (let* ((counts (org-drill-statistics--forecast scope days))
+         (n (length counts)))
+    (if (zerop n)
+        (concat "** Forecast\n"
+                "No forecast window configured.\n")
+      (let* ((labels (cons "Today"
+                           (mapcar (lambda (i) (format "+%d" i))
+                                   (number-sequence 1 (1- n)))))
+             (header (concat "| " (mapconcat #'identity labels " | ") " |"))
+             (values (concat "| "
+                             (mapconcat (lambda (c) (format "%d" c))
+                                        counts " | ")
+                             " |")))
+        (concat "** Forecast\n"
+                header "\n"
+                values "\n")))))
+
+;;; Statistics dashboard: buffer-wide filter state and the UI shell.
+;;
+;; The dashboard is one read-only org-mode buffer assembled from a
+;; filter header line plus the five `org-drill-statistics--render-*'
+;; section strings.  A single buffer-wide filter (scope, range,
+;; algorithm) drives every section; the cycle commands rotate one filter
+;; dimension and re-render in place.
+;;
+;; Integration seam with the render helpers: the renderers read the
+;; three buffer-local filter variables below.
+;; `org-drill-statistics--render-all'
+;; binds the resolved log and scope/algorithm into those vars before
+;; calling the renderers, so each renderer sees a consistent window.  See
+;; the integration notes for the exact contract each renderer is expected
+;; to honor.
+
+(declare-function org-drill-statistics-export-csv "org-drill")
+(declare-function org-drill-statistics--render-overview "org-drill")
+(declare-function org-drill-statistics--render-trends "org-drill")
+(declare-function org-drill-statistics--render-distribution "org-drill")
+(declare-function org-drill-statistics--render-attention "org-drill")
+(declare-function org-drill-statistics--render-forecast "org-drill")
+
+(defconst org-drill-statistics--buffer-name "*Org Drill Statistics*"
+  "Name of the read-only buffer holding the statistics dashboard.")
+
+(defvar org-drill-statistics-range-presets
+  '(("last 90d" . 90)
+    ("last 30d" . 30)
+    ("last 7d"  . 7)
+    ("all time" . nil))
+  "Range filter presets for the dashboard, in cycle order.
+Each element is a cons (LABEL . DAYS).  LABEL is the human string shown
+in the header line.  DAYS is the size of the trailing window in days, or
+nil for the whole log.  The first element is the default range and the
+cycle wraps back to it after the last.")
+
+(defvar-local org-drill-statistics--scope nil
+  "Buffer-local active scope filter for the dashboard.
+A value understood by `org-drill-current-scope', or nil to use the
+current `org-drill-scope'.  Set by `org-drill-statistics' and rotated by
+`org-drill-statistics-cycle-scope'.  Read by the render helpers to bound
+their org traversal.")
+
+(defvar-local org-drill-statistics--range "last 90d"
+  "Buffer-local active range-filter label for the dashboard.
+One of the LABEL strings in `org-drill-statistics-range-presets'.  Set
+by `org-drill-statistics' and rotated by
+`org-drill-statistics-cycle-range'.  The matching DAYS value bounds the
+session log the trend and distribution sections aggregate over.")
+
+(defvar-local org-drill-statistics--algorithm nil
+  "Buffer-local active algorithm filter for the dashboard.
+A drill algorithm symbol to restrict the session log to, or nil for all
+algorithms.  Set by `org-drill-statistics' and rotated by
+`org-drill-statistics-cycle-algorithm'.  Read by the render helpers via
+the filtered log they are handed.")
+
+(defun org-drill-statistics--range-cutoff-float (label)
+  "Return the float-time cutoff for range LABEL, or nil for all time.
+LABEL is a key in `org-drill-statistics-range-presets'.  When its DAYS
+value is non-nil, return the `float-time' of the instant DAYS days before
+now, so records at or after the cutoff fall in the window.  When DAYS is
+nil, or LABEL is unknown, return nil meaning no lower bound."
+  (let ((days (cdr (assoc label org-drill-statistics-range-presets))))
+    (when days
+      (- (float-time) (* days 86400.0)))))
+
+(defun org-drill-statistics--filtered-log (range-label algorithm)
+  "Return `org-drill-session-log' narrowed by RANGE-LABEL and ALGORITHM.
+RANGE-LABEL is a key in `org-drill-statistics-range-presets'; its DAYS
+value bounds the trailing window, and a nil DAYS keeps the whole log.
+ALGORITHM is an algorithm symbol to keep, or nil for all algorithms.
+The original log is not modified."
+  (let* ((by-algo (org-drill-statistics--filter-log
+                   org-drill-session-log algorithm))
+         (cutoff (org-drill-statistics--range-cutoff-float range-label)))
+    (if cutoff
+        (org-drill-statistics--log-since by-algo cutoff)
+      by-algo)))
+
+(defun org-drill-statistics--header-line (scope range algorithm)
+  "Return the dashboard filter header line for SCOPE, RANGE and ALGORITHM.
+SCOPE is the active scope value, or nil for the current `org-drill-scope'.
+RANGE is a range-preset label string.  ALGORITHM is an algorithm symbol,
+or nil for all algorithms.  The result is a single line summarizing the
+three active filters, matching the spec's header format."
+  (format "Scope: %s    Range: %s    Algorithm: %s"
+          (or scope org-drill-scope)
+          range
+          (or algorithm "all")))
+
+(defun org-drill-statistics--render-all (scope range algorithm)
+  "Assemble the full dashboard body string for the active filters.
+SCOPE, RANGE and ALGORITHM are the resolved filter values.  This binds
+the resolved filtered log and the scope/algorithm into the buffer-local
+filter variables so each `org-drill-statistics--render-*' helper reads a
+consistent window, then concatenates the header line and the five
+section strings.  The log and card scans run while these bindings are in
+effect.  Returns the assembled buffer contents as a string."
+  (let* ((org-drill-statistics--scope scope)
+         (org-drill-statistics--range range)
+         (org-drill-statistics--algorithm algorithm)
+         (log (org-drill-statistics--filtered-log range algorithm))
+         (hist (org-drill-statistics--quality-histogram log)))
+    (concat
+     (org-drill-statistics--header-line scope range algorithm)
+     "\n\n"
+     (org-drill-statistics--render-overview scope log)
+     "\n"
+     ;; LOG is already algorithm-filtered, so pass nil to avoid
+     ;; filtering a second time.
+     (org-drill-statistics--render-trends log nil)
+     "\n"
+     (org-drill-statistics--render-distribution hist)
+     "\n"
+     (org-drill-statistics--render-attention scope)
+     "\n"
+     (org-drill-statistics--render-forecast scope))))
+
+(defvar org-drill-statistics-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "q")   #'quit-window)
+    (define-key map (kbd "g")   #'org-drill-statistics-refresh)
+    (define-key map (kbd "e")   #'org-drill-statistics-export-csv)
+    (define-key map (kbd "s")   #'org-drill-statistics-cycle-scope)
+    (define-key map (kbd "r")   #'org-drill-statistics-cycle-range)
+    (define-key map (kbd "a")   #'org-drill-statistics-cycle-algorithm)
+    (define-key map (kbd "RET") #'org-open-at-point)
+    map)
+  "Keymap for `org-drill-statistics-mode'.
+Bindings: q bury, g refresh, e export CSV, s cycle scope, r cycle range,
+a cycle algorithm, RET follow the card link at point.  These avoid the
+read-only org-mode bindings the dashboard relies on for link following
+and navigation.")
+
+(define-minor-mode org-drill-statistics-mode
+  "Minor mode active in the org-drill statistics dashboard buffer.
+Installs `org-drill-statistics-mode-map' so q, g, e, s, r, a and RET
+drive the dashboard.  Enabled by `org-drill-statistics' after the buffer
+is put in `org-mode'; not intended to be toggled by hand."
+  :lighter " OrgDrillStats"
+  :keymap org-drill-statistics-mode-map)
+
+(defun org-drill-statistics--render (buffer scope range algorithm)
+  "Render the dashboard for SCOPE, RANGE, ALGORITHM into BUFFER.
+BUFFER is the target buffer.  Its read-only state is lifted for the
+write, the assembled body replaces the contents, point returns to the
+top, and the buffer is left read-only.  The three filter values are
+stored buffer-locally so refresh and the cycle commands can read and
+rotate them.  Returns BUFFER."
+  (with-current-buffer buffer
+    (let ((inhibit-read-only t)
+          (body (org-drill-statistics--render-all scope range algorithm)))
+      (erase-buffer)
+      (insert body)
+      (goto-char (point-min)))
+    (setq org-drill-statistics--scope scope
+          org-drill-statistics--range range
+          org-drill-statistics--algorithm algorithm)
+    (setq buffer-read-only t)
+    buffer))
+
+;;;###autoload
+(defun org-drill-statistics ()
+  "Open the org-drill statistics dashboard.
+Builds the read-only org-mode buffer `*Org Drill Statistics*' from the
+filter header and the five render sections, using the current
+`org-drill-scope', the default range, and all algorithms, then switches
+to it.  Refresh and the s/r/a cycle commands re-render in place."
+  (interactive)
+  (let ((buffer (get-buffer-create org-drill-statistics--buffer-name))
+        (scope org-drill-scope)
+        (range (caar org-drill-statistics-range-presets))
+        (algorithm nil))
+    (with-current-buffer buffer
+      (org-mode)
+      (org-drill-statistics-mode 1))
+    (org-drill-statistics--render buffer scope range algorithm)
+    (switch-to-buffer buffer)
+    buffer))
+
+(defun org-drill-statistics-refresh ()
+  "Re-render the dashboard in place, preserving the active filters.
+Reads the buffer-local scope, range, and algorithm filters and rebuilds
+every section against the current log and card state.  Bound to g."
+  (interactive)
+  (org-drill-statistics--render
+   (current-buffer)
+   org-drill-statistics--scope
+   org-drill-statistics--range
+   org-drill-statistics--algorithm))
+
+(defun org-drill-statistics-cycle-scope ()
+  "Cycle the dashboard scope filter and refresh.
+Rotates through a small fixed set of common scopes, then re-renders.
+Bound to s."
+  (interactive)
+  (let* ((scopes '(file directory agenda agenda-with-archives))
+         (current org-drill-statistics--scope)
+         (tail (cdr (member current scopes)))
+         (next (or (car tail) (car scopes))))
+    (setq org-drill-statistics--scope next)
+    (org-drill-statistics-refresh)
+    (message "Scope: %s" next)))
+
+(defun org-drill-statistics-cycle-range ()
+  "Cycle the dashboard range filter and refresh.
+Rotates through `org-drill-statistics-range-presets' in order, wrapping
+after the last preset, then re-renders.  Bound to r."
+  (interactive)
+  (let* ((labels (mapcar #'car org-drill-statistics-range-presets))
+         (current org-drill-statistics--range)
+         (tail (cdr (member current labels)))
+         (next (or (car tail) (car labels))))
+    (setq org-drill-statistics--range next)
+    (org-drill-statistics-refresh)
+    (message "Range: %s" next)))
+
+(defun org-drill-statistics-cycle-algorithm ()
+  "Cycle the dashboard algorithm filter and refresh.
+Rotates through every algorithm symbol seen in `org-drill-session-log'
+plus an all-algorithms state (nil), then re-renders.  When the log has
+no records the filter stays at all-algorithms.  Bound to a."
+  (interactive)
+  (let* ((algorithms
+          (delete-dups
+           (delq nil
+                 (mapcar #'org-drill-session-record-algorithm
+                         org-drill-session-log))))
+         ;; nil (all) leads the cycle, then each known algorithm.
+         (states (cons nil algorithms))
+         (current org-drill-statistics--algorithm)
+         (tail (cdr (member current states)))
+         (next (if (member current states)
+                   (car tail)
+                 nil)))
+    (setq org-drill-statistics--algorithm next)
+    (org-drill-statistics-refresh)
+    (message "Algorithm: %s" (or next "all"))))
 
 (provide 'org-drill)
 ;;; org-drill.el ends here
