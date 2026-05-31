@@ -40,7 +40,7 @@ If you've been hitting any of those, this fork should help.
 
 - Cards live as Org headings — no separate database, no sync hassle, your decks are just =.org= files
 - Multiple card types: simple front/back, two-sided, multi-cloze, hide-N-of-N, language-specific (verb conjugation, noun declension), and user-defined
-- Three spaced-repetition algorithms: =SM2=, =SM5= (default), =Simple8=
+- Three spaced-repetition algorithms: =SM2=, =SM5=, =Simple8= (default)
 - Cram mode for review sprints — drill everything, ignore schedule
 - Leitner box system as an alternative to the SM* family
 - Cloze deletion with optional hints (=[hidden||hint]=)
