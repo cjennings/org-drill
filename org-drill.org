@@ -510,6 +510,62 @@ card.
 See [[http://www.supermemo.com/help/leech.htm][the SuperMemo website]] for more on leeches.
 
 
+* Statistics dashboard
+
+
+=M-x org-drill-statistics= opens a read-only dashboard summarising your drill
+history and the current state of your cards. It reads the session log that
+org-drill records at the end of each completed (non-aborted) session, plus the
+=DRILL_*= properties on the cards in scope. The buffer has five sections:
+
+1. *Overview* — total / new / mature / lapsed card counts, and a one-line recap
+   of your most recent session.
+2. *Trends* — reviews-per-day and pass-rate-per-day sparklines (quadrant blocks
+   =▁▂▃▄▅▆▇█=) over the trend window, plus a table of the last 12 weeks.
+3. *Distribution* — a histogram of recall qualities 0–5 across the log.
+4. *Needs attention* — three tables: leech candidates, long-overdue cards, and
+   "forgotten new" cards (added a while ago but never reviewed). Each row links
+   to the card.
+5. *Forecast* — how many cards are scheduled for each of the next seven days.
+
+A filter line at the top shows the active scope, range, and algorithm. The
+dashboard keys are:
+
+| Key   | Action                                         |
+|-------+------------------------------------------------|
+| =q=   | bury the dashboard                             |
+| =g=   | refresh                                        |
+| =s=   | cycle the scope filter                         |
+| =r=   | cycle the range (last 90d / 30d / 7d / all)    |
+| =a=   | cycle the algorithm filter                     |
+| =e=   | export the current view to CSV                 |
+| =RET= | follow the card link at point                  |
+
+** Exporting to CSV
+
+=e= in the dashboard (or =M-x org-drill-statistics-export-csv=) writes three
+files into a directory you choose, honouring the active scope and range:
+
+- =sessions.csv= — one row per recorded session (start, end, scope, algorithm,
+  the quality vector, pass percent, the card counts).
+- =cards.csv= — one row per drill card in scope, with its scheduling
+  properties and computed status.
+- =daily.csv= — one row per day in the range: reviews, passes, fails, pass
+  percent, and total duration in minutes.
+
+Fields are quoted per RFC 4180, so values containing commas or quotes survive a
+round-trip through a spreadsheet. For TSV, pipe the output through =sed=.
+
+** Dashboard settings
+
+| Variable                                    | Default | Meaning                                |
+|---------------------------------------------+---------+----------------------------------------|
+| =org-drill-statistics-trend-days=           |      90 | days the trend section spans           |
+| =org-drill-statistics-forecast-days=        |       7 | days the forecast section spans        |
+| =org-drill-statistics-attention-row-limit=  |      10 | max rows per needs-attention table     |
+| =org-drill-statistics-leech-quality-threshold= |   2.5 | average-quality ceiling for a leech    |
+
+
 * Customisation
 
 

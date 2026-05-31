@@ -46,6 +46,7 @@ If you've been hitting any of those, this fork should help.
 - Cloze deletion with optional hints (=[hidden||hint]=)
 - Multi-file decks via Org's agenda-files mechanism, or per-directory scope
 - Session controls: maximum duration, maximum items per session, leech detection
+- Statistics dashboard (=M-x org-drill-statistics=): overview, daily/weekly trends with sparklines, quality histogram, a needs-attention view (leeches, long-overdue, forgotten-new), and a 7-day forecast, with CSV export
 - LaTeX preview, inline images, and the rest of the Org rendering machinery just work inside drill sessions
 
 ** Installation

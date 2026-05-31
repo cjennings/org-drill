@@ -5571,7 +5571,6 @@ then carries a short note in place of the table."
 ;; the integration notes for the exact contract each renderer is expected
 ;; to honor.
 
-(declare-function org-drill-statistics-export-csv "org-drill")
 (declare-function org-drill-statistics--render-overview "org-drill")
 (declare-function org-drill-statistics--render-trends "org-drill")
 (declare-function org-drill-statistics--render-distribution "org-drill")
@@ -5795,6 +5794,188 @@ no records the filter stays at all-algorithms.  Bound to a."
     (setq org-drill-statistics--algorithm next)
     (org-drill-statistics-refresh)
     (message "Algorithm: %s" (or next "all"))))
+
+;;; CSV export for the statistics dashboard (step 3).
+;;
+;; The row builders are pure: they turn the session log and the scope's
+;; drill entries into lists of field strings.  `--write-csv' renders those
+;; through `--csv-row' and writes a file.  The command threads the active
+;; dashboard filters (scope, range, algorithm) into all three views.
+
+(defun org-drill-statistics--csv-quote (field)
+  "Return FIELD as a CSV field string, quoted when required (RFC 4180).
+FIELD is coerced to a string with `format' when it is not already one.
+It is wrapped in double quotes when it contains a comma, a double quote,
+a carriage return, or a newline, and any embedded double quote is doubled."
+  (let ((s (if (stringp field) field (format "%s" field))))
+    (if (string-match-p "[\",\r\n]" s)
+        (concat "\"" (replace-regexp-in-string "\"" "\"\"" s) "\"")
+      s)))
+
+(defun org-drill-statistics--csv-row (fields)
+  "Join FIELDS into one CSV record line, quoting each field as needed.
+FIELDS is a list; each element passes through `org-drill-statistics--csv-quote'.
+No trailing newline is added."
+  (mapconcat #'org-drill-statistics--csv-quote fields ","))
+
+(defun org-drill-statistics--write-csv (path header rows)
+  "Write HEADER then ROWS as CSV to PATH.
+HEADER is a list of column names.  ROWS is a list of field-lists.  Each is
+rendered with `org-drill-statistics--csv-row' and terminated by a newline."
+  (with-temp-file path
+    (insert (org-drill-statistics--csv-row header) "\n")
+    (dolist (row rows)
+      (insert (org-drill-statistics--csv-row row) "\n"))))
+
+(defconst org-drill-statistics--sessions-csv-header
+  '("start" "end" "scope" "algorithm" "qualities" "pass_percent"
+    "new" "mature" "failed" "cram")
+  "Column header for sessions.csv, tracking the session-record slots.")
+
+(defun org-drill-statistics--session-row (record)
+  "Return RECORD as a list of CSV field strings for sessions.csv.
+RECORD is an `org-drill-session-record'.  Start and end times render as
+local \"YYYY-MM-DD HH:MM:SS\"; the qualities vector renders space-joined."
+  (list
+   (format-time-string
+    "%Y-%m-%d %H:%M:%S"
+    (seconds-to-time (org-drill-session-record-start-time record)))
+   (format-time-string
+    "%Y-%m-%d %H:%M:%S"
+    (seconds-to-time (org-drill-session-record-end-time record)))
+   (format "%s" (org-drill-session-record-scope record))
+   (format "%s" (org-drill-session-record-algorithm record))
+   (mapconcat #'number-to-string
+              (append (or (org-drill-session-record-qualities record) []) nil)
+              " ")
+   (number-to-string (org-drill-session-record-pass-percent record))
+   (number-to-string (org-drill-session-record-new-count record))
+   (number-to-string (org-drill-session-record-mature-count record))
+   (number-to-string (org-drill-session-record-failed-count record))
+   (if (org-drill-session-record-cram-mode record) "t" "nil")))
+
+(defun org-drill-statistics--sessions-rows (log)
+  "Return one CSV field-list per record in LOG, preserving LOG order."
+  (mapcar #'org-drill-statistics--session-row log))
+
+(defconst org-drill-statistics--cards-csv-header
+  '("heading" "last_interval" "repeats_since_fail" "total_repeats"
+    "failure_count" "average_quality" "ease" "last_quality"
+    "last_reviewed" "status")
+  "Column header for cards.csv.")
+
+(defun org-drill-statistics--card-row (session)
+  "Return the drill entry at point as a list of CSV fields for cards.csv.
+SESSION is a transient `org-drill-session' used only to classify status.
+A missing property renders as the empty string."
+  (list
+   (org-get-heading t t t t)
+   (or (org-entry-get (point) "DRILL_LAST_INTERVAL") "")
+   (or (org-entry-get (point) "DRILL_REPEATS_SINCE_FAIL") "")
+   (or (org-entry-get (point) "DRILL_TOTAL_REPEATS") "")
+   (or (org-entry-get (point) "DRILL_FAILURE_COUNT") "")
+   (or (org-entry-get (point) "DRILL_AVERAGE_QUALITY") "")
+   (or (org-entry-get (point) "DRILL_EASE") "")
+   (or (org-entry-get (point) "DRILL_LAST_QUALITY") "")
+   (or (org-entry-get (point) "DRILL_LAST_REVIEWED") "")
+   (format "%s" (or (car (org-drill-entry-status session)) ""))))
+
+(defun org-drill-statistics--cards-rows (&optional scope)
+  "Return one CSV field-list per drill entry in SCOPE for cards.csv.
+SCOPE is a value understood by `org-drill-current-scope'; nil uses the
+current `org-drill-scope'.  A fresh non-cram session classifies status."
+  (let ((session (org-drill-session))
+        (rows nil))
+    (org-drill-map-entries
+     (lambda () (push (org-drill-statistics--card-row session) rows))
+     scope)
+    (nreverse rows)))
+
+(defconst org-drill-statistics--daily-csv-header
+  '("date" "reviews" "passes" "fails" "pass_percent" "duration_min")
+  "Column header for daily.csv.")
+
+(defun org-drill-statistics--daily-rows (log &optional days)
+  "Return one CSV field-list per day over the last DAYS for daily.csv.
+LOG is a list of `org-drill-session-record'.  DAYS defaults to
+`org-drill-statistics-trend-days'; a non-positive value is clamped to 1.
+Rows are oldest-first, one per day, the final row being today.  Each row
+is (DATE REVIEWS PASSES FAILS PASS_PERCENT DURATION_MIN).  A pass is a
+quality above `org-drill-failure-quality'.  Empty days report zeros."
+  (let* ((days (max 1 (or days org-drill-statistics-trend-days)))
+         (today (org-drill-statistics--today-day))
+         (start-day (- today (1- days)))
+         (reviews (make-vector days 0))
+         (passes (make-vector days 0))
+         (fails (make-vector days 0))
+         (duration (make-vector days 0.0)))
+    (dolist (record log)
+      (let* ((day (org-drill-statistics--record-day record))
+             (idx (- day start-day)))
+        (when (and (>= idx 0) (< idx days))
+          (let ((qs (org-drill-session-record-qualities record)))
+            (when qs
+              (mapc
+               (lambda (q)
+                 (aset reviews idx (1+ (aref reviews idx)))
+                 (if (> q org-drill-failure-quality)
+                     (aset passes idx (1+ (aref passes idx)))
+                   (aset fails idx (1+ (aref fails idx)))))
+               qs)))
+          (aset duration idx
+                (+ (aref duration idx)
+                   (/ (- (org-drill-session-record-end-time record)
+                         (org-drill-session-record-start-time record))
+                      60.0))))))
+    (let ((rows nil))
+      (dotimes (i days)
+        (let* ((g (calendar-gregorian-from-absolute (+ start-day i)))
+               (date (format "%04d-%02d-%02d" (nth 2 g) (nth 0 g) (nth 1 g)))
+               (r (aref reviews i)))
+          (push (list date
+                      (number-to-string r)
+                      (number-to-string (aref passes i))
+                      (number-to-string (aref fails i))
+                      (number-to-string
+                       (if (> r 0)
+                           (round (* 100.0 (/ (float (aref passes i)) r)))
+                         0))
+                      (number-to-string (round (aref duration i))))
+                rows)))
+      (nreverse rows))))
+
+;;;###autoload
+(defun org-drill-statistics-export-csv (directory)
+  "Export the statistics views to CSV files in DIRECTORY.
+Writes sessions.csv (one row per session record), cards.csv (one row per
+drill entry in the active scope), and daily.csv (one row per day in the
+active range).  When called from the dashboard buffer the active
+scope/range/algorithm filters apply; otherwise the buffer-local defaults
+do.  Interactively, prompts for DIRECTORY."
+  (interactive
+   (list (read-directory-name "Export statistics CSV to directory: ")))
+  (let* ((scope org-drill-statistics--scope)
+         (range (or org-drill-statistics--range
+                    (caar org-drill-statistics-range-presets)))
+         (algorithm org-drill-statistics--algorithm)
+         (log (org-drill-statistics--filtered-log range algorithm))
+         (days (cdr (assoc range org-drill-statistics-range-presets))))
+    (make-directory directory t)
+    (org-drill-statistics--write-csv
+     (expand-file-name "sessions.csv" directory)
+     org-drill-statistics--sessions-csv-header
+     (org-drill-statistics--sessions-rows log))
+    (org-drill-statistics--write-csv
+     (expand-file-name "cards.csv" directory)
+     org-drill-statistics--cards-csv-header
+     (org-drill-statistics--cards-rows scope))
+    (org-drill-statistics--write-csv
+     (expand-file-name "daily.csv" directory)
+     org-drill-statistics--daily-csv-header
+     (org-drill-statistics--daily-rows log days))
+    (when (called-interactively-p 'interactive)
+      (message "Exported sessions.csv, cards.csv, daily.csv to %s" directory))
+    directory))
 
 (provide 'org-drill)
 ;;; org-drill.el ends here
