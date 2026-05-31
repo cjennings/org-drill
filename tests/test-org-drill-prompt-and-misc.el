@@ -140,6 +140,59 @@
       (org-drill-progress-message 42 50)
       (should (string-match-p "42" got-message)))))
 
+;;;; org-drill outline path in the drill prompt (m.galimski patch)
+
+(ert-deftest test-org-drill--outline-path-string-nested ()
+  "A nested entry yields its ancestor path, bracketed and arrow-joined."
+  (with-temp-buffer
+    (insert "* Spanish\n** Greetings\n*** Hola :drill:\nhola = hello\n")
+    (org-mode)
+    (goto-char (point-min))
+    (search-forward "Hola")
+    (should (equal (org-drill--outline-path-string) "[Spanish > Greetings] "))))
+
+(ert-deftest test-org-drill--outline-path-string-top-level-empty ()
+  "A top-level entry has no ancestors, so the path string is empty."
+  (with-temp-buffer
+    (insert "* Hola :drill:\nhola = hello\n")
+    (org-mode)
+    (goto-char (point-min))
+    (should (equal (org-drill--outline-path-string) ""))))
+
+(ert-deftest test-org-drill--make-minibuffer-prompt-omits-path-by-default ()
+  "With the defcustom off, the outline path is absent from the prompt."
+  (with-temp-buffer
+    (let ((org-startup-folded nil)
+          (org-drill-show-outline-path-during-drill nil))
+      (insert "* Spanish\n** Greetings\n*** Hola :drill:\nhola = hello\n")
+      (org-mode)
+      (goto-char (point-min))
+      (search-forward "Hola")
+      (with-fixed-now
+        (let* ((session (org-drill-session))
+               (prompt (substring-no-properties
+                        (org-drill--make-minibuffer-prompt session "test"))))
+          (should-not (string-match-p "Greetings" prompt)))))))
+
+(ert-deftest test-org-drill--make-minibuffer-prompt-shows-path-when-on ()
+  "With the defcustom on, the prompt carries the bracketed outline path."
+  (with-temp-buffer
+    (let ((org-startup-folded nil)
+          (org-drill-show-outline-path-during-drill t))
+      (insert "* Spanish\n** Greetings\n*** Hola :drill:\nhola = hello\n")
+      (org-mode)
+      (goto-char (point-min))
+      (search-forward "Hola")
+      (with-fixed-now
+        (let* ((session (org-drill-session))
+               (prompt (substring-no-properties
+                        (org-drill--make-minibuffer-prompt session "test"))))
+          (should (string-match-p "\\[Spanish > Greetings\\]" prompt)))))))
+
+(ert-deftest test-org-drill-show-outline-path-defaults-off ()
+  "The outline-path defcustom ships nil so the prompt is unchanged by default."
+  (should (eq nil (default-value 'org-drill-show-outline-path-during-drill))))
+
 (provide 'test-org-drill-prompt-and-misc)
 
 ;;; test-org-drill-prompt-and-misc.el ends here

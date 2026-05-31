@@ -1986,6 +1986,26 @@ Consider reformulating the item to make it easier to remember.\n"
               prompt)
     prompt))
 
+(defcustom org-drill-show-outline-path-during-drill nil
+  "When non-nil, show the card's outline path in the drill prompt.
+The ancestor headings are joined with \" > \" and bracketed, e.g.
+\"[Spanish > Greetings]\", and prepended to the prompt so you can see
+where the current card sits in the deck.  Off by default."
+  :group 'org-drill-display
+  :type 'boolean)
+
+(put 'org-drill-show-outline-path-during-drill 'safe-local-variable 'booleanp)
+
+(defun org-drill--outline-path-string ()
+  "Return the outline path of the entry at point, bracketed for the prompt.
+Joins the ancestor headings with \" > \" and wraps them in brackets with a
+trailing space, e.g. \"[Spanish > Greetings] \".  Returns the empty string
+when the entry has no ancestors or point is not on a heading."
+  (let ((path (ignore-errors (org-get-outline-path))))
+    (if path
+        (concat "[" (mapconcat #'identity path " > ") "] ")
+      "")))
+
 (defun org-drill--make-minibuffer-prompt (session prompt)
   "Make a mini-buffer for the SESSION, with PROMPT."
   (let ((status (cl-first (org-drill-entry-status session)))
@@ -2027,7 +2047,9 @@ Consider reformulating the item to make it easier to remember.\n"
              'face `(:foreground ,org-drill-new-count-color)
              'help-echo (concat "The number of new items that you "
                                 "have never reviewed."))
-            prompt)))
+            (if org-drill-show-outline-path-during-drill
+                (concat (org-drill--outline-path-string) prompt)
+              prompt))))
 
 (defun org-drill-presentation-prompt  (session &optional prompt)
   "Create a card prompt with a timer and user-specified menu.
