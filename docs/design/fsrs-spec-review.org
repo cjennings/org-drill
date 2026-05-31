@@ -1,0 +1,146 @@
+#+TITLE: Spec review - FSRS scheduler for org-drill
+#+DATE: 2026-05-28
+#+AUTHOR: Codex
+
+* Verdict
+
+*Needs research before implementation.*
+
+The spec is directionally strong and much closer than the previous draft, but
+it is not implementation-ready.  The blockers are not mostly product questions;
+they are reproducibility and integration-contract questions: the reference
+implementation is not pinned, the formulas have not been cross-checked against
+that pin, the reference vectors do not exist yet, and two parts of the prose
+conflict with current org-drill behavior.
+
+* Scope Reviewed
+
+- [[file:fsrs-spec.org][docs/design/fsrs-spec.org]]
+- [[file:../../org-drill.el][org-drill.el]] scheduler, safe-local, property, and quality-threshold paths
+- [[file:../../todo.org][todo.org]] FSRS tracking entry
+- Upstream =py-fsrs= and =fsrs4anki= public docs/release pages
+
+* Blocking Findings
+
+** B1. Source pinning is still unresolved, but the spec says no blocking questions remain
+
+The status correctly says implementation must wait for a pinned =py-fsrs= tag,
+equation cross-check, and generated reference-vector fixture
+([[file:fsrs-spec.org::7][fsrs-spec.org:7]]).  The Open questions section then
+says there are "None blocking implementation" and treats the exact =py-fsrs=
+tag as "not a design question" ([[file:fsrs-spec.org::88][fsrs-spec.org:88]],
+[[file:fsrs-spec.org::92][fsrs-spec.org:92]]).
+
+That split leaves an implementer with contradictory marching orders.  The
+reference-vector tests are part of the acceptance plan
+([[file:fsrs-spec.org::426][fsrs-spec.org:426]],
+[[file:fsrs-spec.org::497][fsrs-spec.org:497]]), so the source pin is a blocking
+implementation prerequisite, regardless of whether it is a product decision.
+
+Suggested fix: make the readiness state explicit, e.g. "Needs research:
+implementation starts only after =py-fsrs= tag/commit X is pinned, formulas are
+verified against that source, and =tests/fixtures/fsrs-vectors.py= is generated."
+
+** B2. =DRILL_CARD_WEIGHT= semantics are reversed relative to current org-drill
+
+The spec says FSRS should multiply the final interval by card weight
+([[file:fsrs-spec.org::37][fsrs-spec.org:37]],
+[[file:fsrs-spec.org::79][fsrs-spec.org:79]],
+[[file:fsrs-spec.org::213][fsrs-spec.org:213]],
+[[file:fsrs-spec.org::473][fsrs-spec.org:473]]).  Current org-drill does the
+opposite: the scheduler comment says intervals are divided by weight so weight
+2 means reviewing twice as often, and the code divides the interval delta by
+weight ([[file:../../org-drill.el::1648][org-drill.el:1648]],
+[[file:../../org-drill.el::1670][org-drill.el:1670]],
+[[file:../../org-drill.el::1719][org-drill.el:1719]]).
+
+This is a behavioral regression waiting to happen.  If FSRS uses multiplication,
+existing users who rely on =DRILL_CARD_WEIGHT= for more frequent review would
+get less frequent review under FSRS.
+
+Suggested fix: change the spec to match existing semantics unless Craig
+explicitly wants to redefine =DRILL_CARD_WEIGHT= for FSRS.  The likely contract
+is "apply the same post-algorithm adjustment as SM/Simple8: interpolate from
+last interval toward computed interval by dividing the delta by positive card
+weight."
+
+** B3. Quality mapping contradicts the custom failure threshold test
+
+The Agreed decisions lock a fixed mapping of 0/1/2 to Again, 3 to Hard, 4 to
+Good, 5 to Easy ([[file:fsrs-spec.org::76][fsrs-spec.org:76]]).  The algorithm
+section says this mapping respects =org-drill-failure-quality=
+([[file:fsrs-spec.org::136][fsrs-spec.org:136]]), and the tests require custom
+=org-drill-failure-quality= to shift the Again boundary
+([[file:fsrs-spec.org::443][fsrs-spec.org:443]]).
+
+Those cannot all be true.  Current org-drill has a configurable
+=org-drill-failure-quality= and central failure predicate
+([[file:../../org-drill.el::153][org-drill.el:153]],
+[[file:../../org-drill.el::1955][org-drill.el:1955]]).  FSRS needs a concrete
+policy: either honor that threshold dynamically, or deliberately ignore it and
+remove the custom-boundary test.
+
+Suggested fix: decide this in the spec before implementation.  If honoring the
+existing threshold, define the exact mapping for threshold values other than 2.
+If hard-coding FSRS's boundary, update the prose and tests to say FSRS is
+independent of =org-drill-failure-quality=.
+
+* Medium Findings
+
+** M1. =DRILL_LAST_REVIEWED= ownership is unclear
+
+The state section says FSRS reuses =DRILL_LAST_REVIEWED= and that the SM path
+already writes it ([[file:fsrs-spec.org::160][fsrs-spec.org:160]]).  Elsewhere
+the proposed =org-drill-store-fsrs-result= responsibilities appear to include
+writing FSRS result state, while =org-drill-smart-reschedule= currently owns the
+shared schedule write flow.  The spec should say whether FSRS storage writes
+=DRILL_LAST_REVIEWED= itself or whether the existing reschedule path remains the
+single owner.
+
+Suggested fix: keep =DRILL_LAST_REVIEWED= in the shared reschedule flow if
+possible, and make FSRS-specific IO responsible only for =DRILL_FSRS_*=.
+
+** M2. Defcustom and safe-local updates need to cover the algorithm symbol too
+
+The spec covers =org-drill-fsrs-desired-retention= safe-local validation
+([[file:fsrs-spec.org::83][fsrs-spec.org:83]]), but the existing algorithm
+defcustom and safe-local predicate also need =fsrs= added.  Today the
+algorithm choice and safe-local whitelist only include =sm2=, =sm5=, and
+=simple8= ([[file:../../org-drill.el::528][org-drill.el:528]],
+[[file:../../org-drill.el::928][org-drill.el:928]]).
+
+Suggested fix: add an explicit implementation/test bullet for the algorithm
+defcustom choice list and safe-local whitelist.
+
+** M3. Project tracking is stale
+
+=todo.org= still describes the FSRS spec as implementation-ready and says
+Review 1 was incorporated by Codex ([[file:../../todo.org::119][todo.org:119]]).
+That conflicts with the spec status and with the spec history's neutral
+"External reviewer" wording.  The todo entry should be updated as part of this
+review pass so work is not picked up prematurely.
+
+* Notes On Upstream Sources
+
+The current =py-fsrs= README documents 21 default parameters and four ratings;
+the releases page shows =v6.3.1= as latest on 2026-03-10 and the =v6.0.0=
+release notes say Py-FSRS 6 moved custom parameters from 19 to 21.  Those
+facts support the spec's caution: do not implement from paraphrased formulas
+until the exact v4.x/v4.5 source of truth is pinned and captured in the spec.
+
+Sources:
+- https://github.com/open-spaced-repetition/py-fsrs
+- https://github.com/open-spaced-repetition/py-fsrs/releases
+- https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm
+
+* Recommended Next Iteration
+
+1. Pin the exact reference source: tag/commit, repository, file path, and
+   function names used for formulas and vectors.
+2. Cross-check the v4.5 equations against that source and replace paraphrases
+   with implementation-grade formulas.
+3. Generate and commit the reference-vector fixture.
+4. Resolve =DRILL_CARD_WEIGHT= and =org-drill-failure-quality= semantics in the
+   Agreed decisions table, algorithm section, and tests.
+5. Re-run spec-review.  If those items are resolved, this should be close to
+   implementation-ready.

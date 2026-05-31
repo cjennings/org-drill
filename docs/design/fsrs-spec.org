@@ -1,12 +1,20 @@
-#+TITLE: FSRS scheduler for org-drill — v0 design spec
+#+TITLE: FSRS scheduler for org-drill — v1 design spec
 #+AUTHOR: Craig Jennings
-#+DATE: 2026-05-27
+#+DATE: 2026-05-28
 
 * Status
 
-Draft v0 — pending decisions marked =DECIDE:= inline.  The companion todo
-entry is =todo.org=:125 [#B] "FSRS (Free Spaced Repetition Scheduler)
-Algorithm".  No implementation has started.
+*Needs research — not implementation-ready.*  Review 2 (2026-05-28, Codex) is folded in as Response 2: the two reversed/contradictory product points are corrected (=DRILL_CARD_WEIGHT= now matches existing org-drill semantics; the quality mapping now honors =org-drill-failure-quality= for the Again boundary), and the readiness framing is made honest.
+
+The product design is settled — the decisions in =Agreed decisions= below resolve every design question.  Implementation is still blocked on three research prerequisites, all listed in =Open questions=:
+
+1. Pin the exact =py-fsrs= reference source (tag/commit, repo, file, function names).
+2. Cross-check the v4.5 update equations against that pinned source.  The equations in this spec are *paraphrased and unverified* — do not implement from them as written.
+3. Generate and commit the reference-vector fixture from the pinned source.
+
+See =Review and iteration history= at the bottom for the provenance trail.
+
+Companion todo entry is =todo.org=:125 [#B] "FSRS (Free Spaced Repetition Scheduler) Algorithm".  No implementation has started.
 
 * Context and motivation
 
@@ -34,6 +42,10 @@ disturbing existing SM-family decks.
   rating quality + algorithm-specific extras).
 - Per-card FSRS state persisted to org properties.  Existing SM-style
   properties stay untouched on cards that haven't been switched.
+- =DRILL_CARD_WEIGHT= applies to FSRS intervals the same way it applies
+  to SM intervals: the same delta interpolation org-drill already uses
+  (=org-drill.el=:1681), preserving the existing per-card "review me more
+  often" affordance.  Weight 2 means more frequent review, not less.
 - Test coverage at parity with the SM* test files: Normal / Boundary /
   Error per public function, plus reference-vector tests checking the
   algorithm output against the canonical FSRS implementation.
@@ -52,38 +64,80 @@ disturbing existing SM-family decks.
 - *No bulk rescheduling pass.*  Switching algorithms does not retroactively
   rewrite SCHEDULED dates on existing cards.  Cards keep their current
   SCHEDULED until their next review.
+- *No FSRS learning or relearning steps.*  py-fsrs models cards as moving
+  through Learning → Review → Relearning states with multi-step intervals
+  (default 1m, 10m for learning; 10m for relearning).  v1 uses org-drill's
+  existing daily-review scheduling model.  A failed FSRS review
+  (=Again=) schedules same-day, matching org-drill's current failure flow,
+  while still updating the D/S/R state.  Multi-step learning is the
+  separate todo.org "Graduated Intervals for New Cards" task.
+
+* Agreed decisions
+
+Locked product decisions for v1.  These resolve the design questions, but
+implementation is still blocked on the research prerequisites in =Status=
+above (source pin, equation cross-check, reference vectors).
+
+| # | Decision | Value |
+|---+----------+-------|
+| 1 | FSRS version pin | FSRS-4.5 (17 parameters), with the v4.5 default tuple from the fsrs4anki algorithm wiki |
+| 2 | Default parameters | See =Version pin= below — the exact v4.5 tuple |
+| 3 | Forgetting curve | v4.5: =DECAY = -0.5=, =FACTOR = 19/81= |
+| 4 | Quality mapping | Again iff quality ≤ =org-drill-failure-quality=; otherwise Hard (≤3), Good (4), Easy (5).  At the default threshold of 2 this is 0/1/2 → Again, 3 → Hard, 4 → Good, 5 → Easy |
+| 5 | State shape | =cl-defstruct org-drill-fsrs-state= |
+| 6 | Result shape | =cl-defstruct org-drill-fsrs-result= |
+| 7 | DRILL_CARD_WEIGHT applies to FSRS | Yes — same delta interpolation as SM/Simple8: =next = max(1.0, last + (computed − last) / weight)= on success intervals; weight 2 = more frequent review.  The =Again= same-day path (interval 0) bypasses weight |
+| 8 | Failure semantics | =Again= schedules same-day (=next-interval = 0=); D/S/R state still updates |
+| 9 | First-FSRS-review cold-start message | No message (silent transition) |
+| 10 | Malformed =DRILL_FSRS_*= behavior | User-facing error; scheduling untouched (data-loss safety) |
+| 11 | =org-drill-fsrs-desired-retention= as file-local | Yes — safe-local, bounded 0 < x < 1 |
+| 12 | DRILL_FSRS_* property ownership | Add to =org-drill-scheduling-properties=; undo/strip/copy/migration cover them via the existing list |
+
+* Open questions
+
+No open *product* questions — everything material is resolved in the table
+above.  But three *research prerequisites* block the v1 build, and none can
+be skipped because the reference-vector tests are part of the acceptance plan:
+
+1. *Pin the exact =py-fsrs= source.*  Tag/commit, repo, file path, and the
+   function names used for the formulas and vectors.  Recommend the
+   highest-numbered v4.x release tag on
+   =github.com/open-spaced-repetition/py-fsrs= that still uses 17-parameter
+   defaults.  This is a lookup, not a design question, but it gates the next two.
+2. *Cross-check the equations.*  The =Update equations= below are paraphrased
+   from secondary sources and have not been verified against the pinned
+   =py-fsrs=.  Replace them with implementation-grade formulas read from the
+   pinned source before writing code.
+3. *Generate the reference-vector fixture.*  =tests/fixtures/fsrs-vectors.py=
+   produces the expected-output table the tests check against.  It does not
+   exist yet and must be generated once from the pinned source.
 
 * Version pin
 
-=DECIDE:= FSRS-4.5 (recommended) vs FSRS-6.x.
+*FSRS-4.5* — 17 parameters, the last release whose generic defaults
+provide meaningful retention improvement over SM-family scheduling
+without optimization.  FSRS-4.5 is also where the v4.5 forgetting curve
+(=DECAY = -0.5=, =FACTOR = 19/81=) was introduced.
 
 The current stable upstream is FSRS-6.3.1 (March 2026) with 21
-parameters.  FSRS-4.5 is the last release whose generic defaults provide
-meaningful retention improvement over SM-family scheduling without
-optimization.  The FSRS community's own guidance — quoting Expertium's
-algorithm explainer, March 2026 — is that "generic v6 defaults offer
-minimal improvement over v4.5" because v6's gains come from optimizing
-=w[17]..w[20]= on a user's data.
+parameters.  The FSRS community itself notes that "generic v6 defaults
+offer minimal improvement over v4.5" because v6's gains come from
+optimizing =w[17]..w[20]= on a user's data.  Since v1 ships without an
+optimizer, v4.5 is the pragmatic pin.  Upgrading to v6 becomes a
+separate ticket alongside the optimizer one.
 
-Since v1 ships without an optimizer (above), the pragmatic pin is
-*FSRS-4.5*: 17 parameters, well-documented defaults, the most-published
-test vectors, and the version with the largest delta over SM* in the
-no-optimizer regime.  Upgrading to v6 becomes a separate ticket alongside
-the optimizer one — by then there'd be a real reason to take v6's
-additional surface.
-
-Reference parameters (FSRS-4.5 defaults, source: =py-fsrs= up to v4 and
-the original =fsrs4anki= release notes):
+*FSRS-4.5 default parameter tuple* (source: fsrs4anki algorithm wiki,
+March 2026):
 
 #+begin_src elisp
-;; w[0..16], FSRS-4.5
-(0.4 0.6 2.4 5.8 4.93 0.94 0.86 0.01 1.49 0.14 0.94 2.18 0.05 0.34 1.26 0.29 2.61)
+;; w[0..16], FSRS-4.5 defaults
+(0.4872 1.4003 3.7145 13.8206 5.1618 1.2298 0.8975 0.031 1.6474
+ 0.1367 1.0461 2.1072 0.0793 0.3246 1.587 0.2272 2.8755)
 #+end_src
 
-(=DECIDE:= confirm this exact tuple before code lands.  The 4.5 defaults
-were tuned twice during 4.x's life; pinning the final 4.5-stable tuple is
-a one-line lookup against the =py-fsrs= 4.x release tag, deferred to
-implementation.)
+The reference-vector tests pin against a specific =py-fsrs= release tag
+(resolved in the implementation session — see =Open questions= above)
+so the test fixtures are reproducible.
 
 * Algorithm shape (v4.5)
 
@@ -96,8 +150,19 @@ The four-rating scale FSRS uses internally:
 |      3 | Good  | recalled normally      |
 |      4 | Easy  | trivial recall         |
 
-org-drill uses a 0–5 quality scale.  The mapping respects
-=org-drill-failure-quality= (default 2):
+org-drill uses a 0–5 quality scale.  The mapping (locked, see Agreed
+decisions #4) honors =org-drill-failure-quality= for the Again boundary,
+then applies a fixed sub-mapping to the successful grades:
+
+#+begin_src elisp
+;; central failure predicate, org-drill.el:1966 — (<= quality org-drill-failure-quality)
+(cond ((<= quality org-drill-failure-quality) 'again)  ; failure → Again
+      ((<= quality 3) 'hard)
+      ((= quality 4)  'good)
+      (t              'easy))                           ; quality 5
+#+end_src
+
+At the default threshold of 2 this is the familiar table:
 
 | org-drill quality | FSRS rating |
 |-------------------+-------------|
@@ -106,49 +171,56 @@ org-drill uses a 0–5 quality scale.  The mapping respects
 | 4                 | Good (3)    |
 | 5                 | Easy (4)    |
 
-=DECIDE:= mapping table.  Above is the natural reading of
-=org-drill-failure-quality=, but org-drill historically lets users
-remap session keys, and the mapping should respect that or be its
-own defcustom.  Simplest: pin the mapping above for v1 and add
-=org-drill-fsrs-quality-mapping= as a future enhancement.
+A custom =org-drill-failure-quality= shifts the Again boundary the same way
+it does for the SM-family schedulers: a threshold of 3 sends quality 3 to
+Again, a threshold of 1 leaves quality 2 as a success (Hard).  The success
+sub-mapping stays fixed so FSRS's Hard/Good/Easy grades remain stable across
+threshold settings.  A future =org-drill-fsrs-quality-mapping= defcustom
+could let users remap the success grades; v1 keeps them fixed.
 
 ** State model
 
-Per-card persisted state:
+Per-card persisted state lives in four properties plus the existing
+=DRILL_LAST_REVIEWED=:
 
-| Property              | Type   | Meaning                              |
-|-----------------------+--------+--------------------------------------|
+| Property                | Type   | Meaning                                |
+|-------------------------+--------+----------------------------------------|
 | =DRILL_FSRS_STABILITY=  | float  | =S=, the memory-stability estimate     |
 | =DRILL_FSRS_DIFFICULTY= | float  | =D=, the difficulty estimate (1..10)   |
-| =DRILL_FSRS_REVIEWS=    | int    | review count under FSRS (≥ 0)        |
-| =DRILL_FSRS_LAPSES=     | int    | failures (rating=Again) under FSRS   |
-| =DRILL_LAST_REVIEWED=   | time   | reused from the existing SM property |
+| =DRILL_FSRS_REVIEWS=    | int    | review count under FSRS (≥ 0)          |
+| =DRILL_FSRS_LAPSES=     | int    | failures (rating = Again) under FSRS   |
+| =DRILL_LAST_REVIEWED=   | time   | reused from the existing SM property   |
 
-The last-reviewed timestamp is already written by the SM path
-(=org-drill-store-item-data= writes it via =org-set-property= elsewhere in
-the flow); FSRS reads the same property.
-
+=DRILL_LAST_REVIEWED= is written by the shared reschedule flow
+(=org-drill.el=:1930, unconditional after the algorithm dispatch), not by
+any algorithm-specific path.  FSRS only *reads* it.  =org-drill-store-fsrs-result=
+writes the four =DRILL_FSRS_*= properties only; the shared flow stays the
+single owner of =DRILL_LAST_REVIEWED= (see M1 in the Review dispositions).
 A virgin FSRS card has all four =DRILL_FSRS_*= properties absent; the
 scheduler treats absence as "first review."
 
-** Update equations (v4.5 form)
+The four =DRILL_FSRS_*= properties join =org-drill-scheduling-properties=
+so all existing strip, undo, copy, and migration paths handle them
+without additional plumbing (see =Scheduling property ownership= below).
+
+** Update equations (v4.5)
 
 First review (no prior FSRS state) with rating R ∈ {1..4}:
 
 #+begin_src elisp
-S0 = w[R-1]                            ; initial stability per rating
-D0 = clamp (- w[4] (* w[5] (- R 2))) 1 10
+S0 = w[R-1]                                  ; initial stability per rating
+D0 = clamp (- w[4] (* w[5] (- R 2))) 1 10    ; initial difficulty
 #+end_src
 
-Subsequent review at time =elapsed-days= since last review, with current
-stability =S=, difficulty =D=, and rating =R=:
+Subsequent review at time =elapsed-days= since last review, with
+current stability =S=, difficulty =D=, and rating =R=:
 
 #+begin_src elisp
-;; Retrievability when the card is shown
-R-retrieval = (expt (1+ (/ elapsed-days (* 9 S))) -1)
+;; Retrievability at review time — v4.5 forgetting curve (DECAY=-0.5, FACTOR=19/81)
+R-retrieval = (expt (+ 1 (* (/ 19.0 81) (/ elapsed-days S))) -0.5)
 
 ;; Difficulty update (linear with mean reversion toward w[4])
-D-delta    = (* w[6] (- (- R 3)))      ; positive on Again, neutral on Good
+D-delta    = (* w[6] (- (- R 3)))            ; positive on Again, neutral on Good
 D-new-raw  = (+ D D-delta)
 D-new      = (+ (* w[7] w[4]) (* (- 1 w[7]) D-new-raw))   ; mean reversion
 D-new      = (clamp D-new 1 10)
@@ -169,84 +241,192 @@ S-new = w[11] *
         exp((1 - R-retrieval) * w[14])
 #+end_src
 
-Next interval given desired retention =DR= and new stability =S=:
+Next interval given desired retention =DR= and new stability =S=
+(v4.5 form, derived from R = (1 + (19/81)·t/S)^(-0.5) inverted to t):
 
 #+begin_src elisp
-I = (* 9 S (- (expt DR -1) 1))         ; days, rounded down (floor)
+I-raw = (* (/ 81.0 19) S (- (expt DR -2) 1))   ; days, the FSRS-computed interval
+
+;; DRILL_CARD_WEIGHT: same delta interpolation as SM/Simple8 (org-drill.el:1681).
+;; Interpolates from the card's last interval toward the computed interval,
+;; dividing the delta by weight, so weight 2 = more frequent review.  Applied
+;; only on success; the Again path below returns 0 and bypasses this.
+I = (if (and (numberp weight) (cl-plusp weight))
+        (max 1.0 (+ last-interval (/ (- I-raw last-interval) weight)))
+      I-raw)
+I = (max 0 (floor I))
 #+end_src
 
-Default desired retention is *0.9* (a common Anki default).  Pinned as
-=org-drill-fsrs-desired-retention= defcustom.
+Default desired retention is *0.9*, the common Anki default.  Pinned
+as the =org-drill-fsrs-desired-retention= defcustom.
 
-=DECIDE:= the exact form of the v4.5 update equations above is paraphrased
-from Expertium's algorithm walkthrough (March 2026, v6-oriented) and the
-=py-fsrs= reference implementation.  Implementation will cross-check the
-exact constants and grouping against a tagged =py-fsrs= v4.x release
-before writing the function body.
+*Failure semantics.*  =Again= (R = 1) returns =I = 0= so org-drill's
+existing failure flow re-queues the card same-day, while
+=S-new= / =D-new= still update from the lapse equations above.  This
+keeps v1 inside the daily-review scheduling model (see Non-goals).
 
 ** Default parameters (org-drill defcustoms)
 
 #+begin_src elisp
 (defcustom org-drill-fsrs-parameters
-  '(0.4 0.6 2.4 5.8 4.93 0.94 0.86 0.01 1.49 0.14 0.94 2.18 0.05 0.34 1.26 0.29 2.61)
-  "17-tuple FSRS-4.5 default parameters.  See =docs/design/fsrs-spec.org=.")
+  '(0.4872 1.4003 3.7145 13.8206 5.1618 1.2298 0.8975 0.031 1.6474
+    0.1367 1.0461 2.1072 0.0793 0.3246 1.587 0.2272 2.8755)
+  "17-tuple FSRS-4.5 default parameters.  See =docs/design/fsrs-spec.org=
+for the algorithm and the parameter-tuple source."
+  :group 'org-drill-algorithm
+  :type '(repeat number))
 
 (defcustom org-drill-fsrs-desired-retention 0.9
-  "Target retention for FSRS scheduling.  Higher = shorter intervals.")
+  "Target retention for FSRS scheduling.  Higher = shorter intervals.
+Bounded 0 < x < 1.  Safe as a file-local variable."
+  :group 'org-drill-algorithm
+  :type 'float
+  :safe (lambda (v) (and (numberp v) (< 0 v 1))))
 #+end_src
+
+* Scheduling property ownership
+
+The four =DRILL_FSRS_*= properties are org-drill scheduling state and
+participate in every workflow that already handles SM scheduling
+properties.  V1 adds them to =org-drill-scheduling-properties= so the
+existing helpers cover them without per-call plumbing:
+
+| Workflow | Helper / call site | Behavior |
+|----------+---------------------+----------|
+| Rating snapshot for undo | =org-drill--snapshot-entry-data= | Captures =DRILL_FSRS_*= alongside SM properties |
+| Undo last rating | =org-drill-undo-last-rating= → =org-drill--restore-entry-data= | Restores =DRILL_FSRS_*= verbatim |
+| Strip single entry | =org-drill-strip-entry-data= | Removes =DRILL_FSRS_*= |
+| Strip all entries | =org-drill-strip-all-data= | Removes =DRILL_FSRS_*= across the scope |
+| Copy / share to marker | =org-drill--copy-scheduling-to-marker= | Migrates =DRILL_FSRS_*= |
+| Org property completion | =org-drill-scheduling-properties= consumers | =DRILL_FSRS_*= appear in completion |
+
+*Implementation.*  Add the four FSRS property names to the
+=org-drill-scheduling-properties= defvar list.  No new branching;
+existing iterations over that list pick the FSRS properties up
+automatically.
+
+*Tests.*  Each of the six workflows above gets an FSRS-specific
+regression test pinning the property-set behavior (see =Test
+strategy=).
+
+* Validation and malformed-state behavior
+
+** Parameter validation
+
+- =org-drill-fsrs-parameters=: exactly 17 numbers.  Fewer or more
+  signals a user-error at FSRS-arm dispatch time with a message naming
+  the count mismatch.
+- =org-drill-fsrs-desired-retention=: strictly between 0 and 1
+  (exclusive).  Out-of-range values signal a user-error.
+- The defcustom :safe predicates handle the file-local case so a
+  malformed file-local value doesn't crash org-drill load.
+
+** Per-card malformed state
+
+If any =DRILL_FSRS_*= property is present but not parseable as the
+expected type (e.g. =DRILL_FSRS_STABILITY= contains "nan" or a stray
+string), =org-drill-get-fsrs-state= signals a clear user-facing error
+and refuses to schedule the card, leaving the existing
+SCHEDULED/DRILL_FSRS_* state untouched.  Rationale: data-loss safety —
+silently treating malformed state as "virgin" would erase the user's
+actual FSRS history on the next save.
+
+The error message names the property, the card heading, and the
+offending value so the user can find and fix it manually.
 
 * Integration points
 
 ** Public function
 
 #+begin_src elisp
-(defun org-drill-determine-next-interval-fsrs (state quality)
-  "Return next-interval (in days) plus updated FSRS state for STATE after
-QUALITY (0-5).  STATE here is a 5-tuple (S D reviews lapses last-reviewed),
-not an `org-drill-card-state' — FSRS stores its own state and treats the SM
-slots as opaque.")
+(cl-defstruct org-drill-fsrs-state
+  "FSRS per-card scheduling state, read from DRILL_FSRS_* properties.
+
+Slots:
+- stability      :: float, S, memory-stability estimate
+- difficulty     :: float, D, difficulty estimate (1..10)
+- reviews        :: int, total reviews under FSRS (≥ 0)
+- lapses         :: int, lapses under FSRS (≥ 0)
+- last-reviewed  :: time, DRILL_LAST_REVIEWED (shared with SM)"
+  stability difficulty reviews lapses last-reviewed)
+
+(cl-defstruct org-drill-fsrs-result
+  "Result of one FSRS scheduling computation.
+
+Slots:
+- next-interval     :: integer days, post-weight, ≥ 0
+- new-stability     :: updated S
+- new-difficulty    :: updated D
+- new-reviews       :: incremented review count
+- new-lapses        :: incremented lapse count if R = Again"
+  next-interval new-stability new-difficulty new-reviews new-lapses)
+
+(defun org-drill-determine-next-interval-fsrs (state quality &optional card-weight)
+  "Run one FSRS scheduling step.
+
+STATE is an `org-drill-fsrs-state' or nil (virgin card).
+QUALITY is the org-drill 0-5 rating.
+CARD-WEIGHT is the DRILL_CARD_WEIGHT (default 1.0).
+
+Returns an `org-drill-fsrs-result' with the new D/S/R, the updated
+review and lapse counts, and the next interval in days (after the
+weight delta-interpolation, floored, clamped at zero).")
 #+end_src
 
-The shape =(state quality)= matches the post-#147 scheduler signature
-convention.  =state= for FSRS is a *separate* struct =org-drill-fsrs-state=
-(or a plist — =DECIDE:= which), populated from the =DRILL_FSRS_*=
-properties at the call site.
-
-=DECIDE:= the return shape.  Options:
-
-1. Same shape as the SM* schedulers (a list with =next-interval=
-   first plus updated state).  Consistent but the trailing slots are
-   irrelevant to FSRS.
-2. A small =org-drill-fsrs-result= struct (=next-interval=,
-   =new-stability=, =new-difficulty=, =new-reviews=, =new-lapses=).
-   Cleaner for FSRS but introduces a return-shape special case in the
-   =cl-case= caller.
-
-Recommended: option 2.  =cl-case= already special-cases =new-ofmatrix=
-for SM5; one more is fine and the FSRS state shape is genuinely different.
+The =(state quality)= shape matches the post-#147 scheduler signature
+convention.  =state= for FSRS is the FSRS-specific struct, populated
+from the =DRILL_FSRS_*= properties at the call site.
 
 ** Caller integration
 
-In =org-drill-smart-reschedule=:
+=org-drill-smart-reschedule= gets a dedicated =fsrs= arm before the
+SM-shaped destructuring, because the FSRS result struct does not match
+the SM positional list shape:
 
 #+begin_src elisp
-;; sketch — exact destructure shape TBD per the return-shape DECIDE
 (fsrs
- (let ((fsrs-state (org-drill-get-fsrs-state)))
-   (org-drill-fsrs-apply-result
-    (org-drill-determine-next-interval-fsrs fsrs-state quality))))
+ (let* ((fsrs-state (org-drill-get-fsrs-state))
+        (weight (org-drill--card-weight))   ; DRILL_CARD_WEIGHT, defaults to 1.0
+        (result (org-drill-determine-next-interval-fsrs
+                 fsrs-state quality weight)))
+   (org-drill-store-fsrs-result result)     ; writes DRILL_FSRS_* only
+   (org-schedule nil (format "+%dd" (org-drill-fsrs-result-next-interval result)))))
 #+end_src
+
+=org-drill-hypothetical-next-review-date= mirrors this without the
+store-side-effect — it reads state, computes the result, and returns
+the interval without writing anything.  The "read state, compute,
+discard result" pattern keeps the prompt preview side-effect-free.
 
 Two new helpers parallel the existing item-data round-trip:
 
-- =org-drill-get-fsrs-state= — reads the =DRILL_FSRS_*= properties, returns
-  the state struct or nil for a virgin card.
-- =org-drill-store-fsrs-state= (or =org-drill-fsrs-apply-result=) — writes
-  the updated state back.  The =SCHEDULED= timestamp is set via
-  =org-schedule= using the returned =next-interval=, the same way
-  =smart-reschedule= already does for SM*.
+- =org-drill-get-fsrs-state= — reads the four =DRILL_FSRS_*=
+  properties.  Returns an =org-drill-fsrs-state= or nil for a virgin
+  card.  Raises a clear user-error on malformed values (see
+  =Validation= above).
+- =org-drill-store-fsrs-result= — writes the four =DRILL_FSRS_*=
+  properties back from a result struct.  It does *not* write
+  =DRILL_LAST_REVIEWED= — the shared reschedule flow (=org-drill.el=:1930)
+  owns that for every algorithm.
 
-Same in =hypothetical-next-review-date= (read-only, no store).
+** Architecture: pure formula core, thin IO shell
+
+The implementation separates pure functions from property IO so each
+layer is independently testable:
+
+| Layer | Functions | Tested in |
+|-------+-----------+-----------|
+| Pure quality mapping | =org-drill--fsrs-rating-from-quality= | mapping tests |
+| Pure retrievability | =org-drill--fsrs-retrievability= | reference-vector tests |
+| Pure initial state | =org-drill--fsrs-initial-state= | reference-vector tests |
+| Pure update step | =org-drill--fsrs-update= | reference-vector tests |
+| Pure interval calc | =org-drill--fsrs-interval= | reference-vector tests |
+| Property IO | =org-drill-get-fsrs-state=, =org-drill-store-fsrs-result= | round-trip tests |
+| Orchestration | =org-drill-determine-next-interval-fsrs= | integration tests |
+
+The =cl-case= branch in =org-drill-smart-reschedule= is the
+orchestration layer.  Everything below the branch is pure or
+property-IO-only.
 
 ** Defcustom entry
 
@@ -257,6 +437,21 @@ Same in =hypothetical-next-review-date= (read-only, no store).
   used in Anki since 2024.  See `docs/design/fsrs-spec.org` for the algorithm
   and the state model.
 #+end_src
+
+Three places currently enumerate the three SM-family algorithms and all
+need =fsrs= added (M2 from Review 2):
+
+- The =org-drill-spaced-repetition-algorithm= defcustom =:type= choice
+  list (=org-drill.el=:541) — add =(const fsrs)=.
+- The =cl-case= dispatch in =org-drill-smart-reschedule= and
+  =org-drill-hypothetical-next-review-date= — the new =fsrs= arm (covered
+  in =Caller integration= above).
+- The safe-local-variable predicate (=org-drill.el=:942), currently
+  =(memq val '(simple8 sm5 sm2))= — add =fsrs= so a file-local
+  =org-drill-spaced-repetition-algorithm: fsrs= is accepted.
+
+A test asserts all four symbols are accepted by the safe-local predicate
+and present in the defcustom choice list.
 
 * Backward compatibility
 
@@ -274,81 +469,206 @@ FSRS review after a switch:
 The cold-start tradeoff is a known one-time loss of the SM-derived
 estimate of card difficulty.  Anki's migration heuristic estimates
 initial =D= and =S= from the SM2 ease factor and interval; pulling that in
-is its own ticket (=todo:= "FSRS migration heuristic from SM history").
+is its own ticket (todo: "FSRS migration heuristic from SM history").
 
-=DECIDE:= whether to also surface a one-line "first FSRS review on this
-card — cold-starting" message during the prompt for the first FSRS review.
-Probably not — users don't need to know.
+V1 does NOT surface a "first FSRS review on this card" message — the
+transition is silent (per Agreed decisions #9).  A per-card notice
+would be noisy and doesn't change what the user can do.
 
 * Test strategy
 
-Three categories per public function, matching the existing scheduler
-test files:
+Four test files cover the FSRS work, matching the existing
+file-per-area convention:
 
-1. =tests/test-org-drill-determine-next-interval-fsrs.el= — Normal /
-   Boundary / Error coverage of =org-drill-determine-next-interval-fsrs=.
-   *Reference-vector tests* check =(state, rating) -> (next-interval,
-   new-state)= against pre-computed outputs from =py-fsrs= at a tagged
-   v4.x release.  About a dozen vectors covering the four ratings × first
-   review / nth review / lapse / long-elapsed-time, plus boundary ones
-   (=elapsed-days=0=, =D= and =S= at clamp limits).
+** =tests/test-org-drill-determine-next-interval-fsrs.el=
 
-2. =tests/test-org-drill-fsrs-state-roundtrip.el= — get-fsrs-state /
-   store-fsrs-state round-trip parity, mirroring the SM
-   item-data-roundtrip test.
+Normal / Boundary / Error coverage of the public function, plus
+*reference-vector tests* that check =(state, quality, weight) →
+(next-interval, new-state)= against pre-computed outputs from
+=py-fsrs= at the pinned v4.x release tag.
 
-3. =tests/test-org-drill-fsrs-integration.el= — end-to-end through
-   =smart-reschedule= with =org-drill-spaced-repetition-algorithm= set to
-   =fsrs=, covering: virgin card first review, returning card under
-   FSRS, switched-from-SM card cold-starts cleanly, both algorithms can
-   coexist on the same buffer.
+Reference vectors cover, at minimum:
 
-Mapping helpers (org-drill quality 0–5 → FSRS rating 1–4) and the
-defcustoms get their own small tests.
+- All six org-drill qualities (0, 1, 2, 3, 4, 5) on a virgin card.
+- All six qualities on a returning card with non-trivial elapsed days.
+- A lapse path (Again on a returning card) confirming D/S/R update
+  AND =next-interval = 0=.
+- Long-elapsed-days case (e.g. 365 days since last review).
+- =elapsed-days = 0= boundary (same-day review).
+- =D= and =S= near clamp limits (D = 1.0, D = 10.0, S near 0).
+- =card-weight = 1.0= (default, no change) and =card-weight = 2.0=
+  (verify the delta interpolation: a weight-2 success interval lands
+  between the last interval and the computed interval, i.e. shorter than
+  computed = more frequent — not 2× longer).
+- =Again= with a non-default weight confirms the failure path returns 0
+  and bypasses the weight interpolation.
+
+Quality-mapping tests for the 0..5 → Again/Hard/Good/Easy mapping,
+including verification that a custom =org-drill-failure-quality= shifts
+the Again boundary while the Hard/Good/Easy sub-mapping stays fixed
+(threshold 1, 2, and 3 cases).
+
+** =tests/test-org-drill-fsrs-state-roundtrip.el=
+
+=org-drill-get-fsrs-state= and =org-drill-store-fsrs-result= round-trip
+parity, mirroring the SM item-data-roundtrip test.
+
+Cases:
+
+- Virgin card (all four properties absent) → state is nil.
+- Complete valid properties → state matches.
+- Partial properties (some present, some absent) → user-error.
+- Malformed numeric value (e.g. =DRILL_FSRS_STABILITY: "garbage"=) →
+  user-error, scheduling untouched.
+- Store-then-read round-trip preserves float precision within
+  reasonable bounds.
+
+** =tests/test-org-drill-fsrs-integration.el=
+
+End-to-end through =smart-reschedule= with
+=org-drill-spaced-repetition-algorithm= set to =fsrs=:
+
+- Virgin card first review (each of the six qualities).
+- Returning card under FSRS.
+- =days-ahead= override path (explicit interval).
+- Switched-from-SM card cold-starts cleanly (no SM property loss).
+- Both algorithms coexist on the same buffer (one card SM, one card
+  FSRS).
+- =DRILL_CARD_WEIGHT= applied (weight = 2 → success interval interpolated
+  toward the computed value over the last interval, i.e. shorter than the
+  weight-1 result, matching SM/Simple8).
+- =org-drill-hypothetical-next-review-date= for FSRS is read-only
+  (calling it does not write any property).
+
+** =tests/test-org-drill-fsrs-scheduling-property-ownership.el=
+
+The secondary-workflow regressions for property ownership:
+
+- =org-drill-undo-last-rating= restores =DRILL_FSRS_*= verbatim.
+- =org-drill-strip-entry-data= removes =DRILL_FSRS_*= for a single
+  entry.
+- =org-drill-strip-all-data= removes =DRILL_FSRS_*= across the scope.
+- =org-drill--copy-scheduling-to-marker= migrates =DRILL_FSRS_*= to
+  the target.
+- =org-drill-scheduling-properties= membership: assertion that the
+  four FSRS property names are in the list.
+
+** Defcustom validation tests
+
+A small file for the validation logic — exact-17 tuple count,
+0 < retention < 1, safe-local predicate for retention.
+
+** Reference-vector generation
 
 The reference vectors get committed alongside the tests as a
-machine-checkable expected-output table, generated once from =py-fsrs=
-and pinned.  The generation script lives at =tests/fixtures/fsrs-vectors.py=
-so re-generation is reproducible.
+machine-checkable expected-output table, generated once from
+=py-fsrs= at the pinned tag.  The generation script lives at
+=tests/fixtures/fsrs-vectors.py= so re-generation is reproducible.
+The =py-fsrs= tag is recorded in a comment at the top of the fixture
+file.
 
 * Effort estimate
 
 Multi-day, plausibly spanning sessions:
 
-- Algorithm function + helpers: 1 day.
-- State round-trip + integration in =smart-reschedule=/=hypothetical=: 0.5
-  day.
-- Test scaffolding + reference vectors + Normal/Boundary/Error: 1 day.
-- Documentation (manual entry, README option list, defcustom docstrings,
-  this spec ratified): 0.5 day.
+- Pure formula functions (quality-map, retrievability, initial-state,
+  update, interval) + their unit tests: 0.5 day.
+- Property IO (=org-drill-get-fsrs-state=,
+  =org-drill-store-fsrs-result=) + round-trip tests: 0.5 day.
+- =cl-case= integration in =smart-reschedule= and
+  =hypothetical-next-review-date= + integration tests: 0.5 day.
+- Property-ownership additions to =org-drill-scheduling-properties=
+  + the four secondary-workflow regression tests: 0.5 day.
+- Reference-vector fixture generation + the reference-vector tests
+  + the validation tests: 0.5 day.
+- Documentation (README option list, defcustom docstrings, manual
+  entry): 0.25 day.
 
-Realistic: a session to implement-and-test the algorithm + state
-round-trip with reference-vector tests; a follow-up session for the
-integration + docs.  No optimizer.
+Realistic: two sessions.  Session 1 ships the pure formula core, the
+state round-trip, and the integration through smart-reschedule.
+Session 2 ships the property-ownership secondary-workflow tests, the
+reference vectors, the validation tests, and the docs.
 
-* Open decisions index
+* Review dispositions
 
-Pinned in one place for the implementation gate:
+Modified or rejected recommendations from prior reviews.  Accepted
+recommendations are woven into the body above and do not need
+disposition entries — the change is the record.
 
-- =DECIDE:= version pin (FSRS-4.5 vs newer).  Recommended: 4.5.
-- =DECIDE:= the exact FSRS-4.5 default-parameter tuple.  One-line lookup
-  against the =py-fsrs= 4.x final release.
-- =DECIDE:= quality-mapping table (0–5 → 1–4).  Recommended: above.
-- =DECIDE:= scheduler return shape — list (SM-shape) or
-  =org-drill-fsrs-result= struct.  Recommended: struct.
-- =DECIDE:= whether to surface a "first FSRS review on this card"
-  message.  Recommended: no.
-- =DECIDE:= the exact form of the update equations after cross-checking
-  =py-fsrs= 4.x source.
+** Review 1 (2026-05-28) — modified items
+
+*H1 (Version mismatch).*  The reviewer offered "pin FSRS v4 OR pin
+FSRS-4.5 with the correct tuple."  Accepted the *v4.5* side of that
+choice (matches the spec's stated intent throughout) and replaced the
+v4 tuple at line 80 with the reviewer's verified v4.5 tuple from the
+fsrs4anki algorithm wiki.  The interval and retrievability equations were
+updated to the v4.5 forgetting-curve form (=DECAY=-0.5=,
+=FACTOR=19/81=).  Rejected the alternative (revert to v4) because
+v4.5 has more published test vectors and a larger no-optimizer
+delta over SM-family.
+
+*M2 (Stale docs paths).*  Resolved by the unrelated
+=docs/design/= relocation commit landed earlier this session.  The
+two in-spec references at lines 192 and 257 now point at
+=docs/design/fsrs-spec.org=.
+
+Everything else from Review 1 accepted as written.
+
+** Review 2 (2026-05-28, Codex) — dispositions
+
+*B1 (readiness framing contradiction).*  Accepted.  Response 1 said both
+"implementation can proceed" and listed unmet research prerequisites.
+Reframed =Status= and =Open questions= to state "Needs research" plainly
+and enumerate the three blocking prerequisites (source pin, equation
+cross-check, reference vectors).
+
+*B2 (DRILL_CARD_WEIGHT reversed).*  Accepted, and the root cause was mine:
+Response 1 said FSRS multiplies the interval by weight, on my incorrect
+description of how SM handles weight.  The real mechanism (=org-drill.el=:1681)
+divides the interval *delta* by weight, so weight 2 means more frequent
+review.  Craig chose to match the existing semantics exactly.  Fixed the
+Goals bullet, decision #7, the interval equation, and the weight tests.
+
+*B3 (quality mapping contradiction).*  Accepted.  Response 1 locked a fixed
+table, claimed it respected =org-drill-failure-quality=, and tested a
+custom threshold — mutually inconsistent.  Craig chose to honor the
+threshold for the Again boundary with a fixed Hard/Good/Easy sub-mapping.
+Fixed decision #4, the algorithm mapping section, and the mapping tests.
+
+*M1 (DRILL_LAST_REVIEWED ownership).*  Accepted.  The shared reschedule
+flow (=org-drill.el=:1930) already owns =DRILL_LAST_REVIEWED= for every
+algorithm; =org-drill-store-fsrs-result= now writes =DRILL_FSRS_*= only.
+
+*M2 (algorithm symbol coverage).*  Accepted.  Added an explicit bullet that
+=fsrs= joins the defcustom choice list (=org-drill.el=:541) and the
+safe-local whitelist (=org-drill.el=:942), with a test.
+
+*M3 (stale todo).*  Already resolved — the =todo.org= FSRS entry was
+updated to "not implementation-ready as of Review 2" before this response.
+
+* Review and iteration history
+
+| Iteration  | Date       | Contributor   | Role      | What changed or was recommended | Why |
+|------------+------------+---------------+-----------+----------------------------------+-----|
+| Draft v0   | 2026-05-27 | Craig Jennings | Author    | Initial draft with 6 DECIDE markers and recommendations baked in for each.  Same shape as the stats-dashboard spec. | Establish a written design before any FSRS code lands. |
+| Review 1   | 2026-05-28 | External reviewer | Reviewer  | Four blocking findings (version/tuple/equation mismatch, scheduler/state result shape, property ownership across strip/undo/copy/migration, learning/relearning scope) plus two medium, plus UX/Architecture/Robustness observations and full test-strategy expansion. | An external read of the spec against the existing codebase caught the v4-vs-v4.5 drift and several missing secondary-workflow paths. |
+| Response 1 | 2026-05-28 | Claude Code    | Responder | All four blocking findings resolved; medium-priority items accepted; new sections added (Agreed decisions, Scheduling property ownership, Validation and malformed-state behavior); test strategy expanded to four files; v4 → v4.5 tuple and equations corrected; struct shapes locked; DRILL_CARD_WEIGHT confirmed to apply (Craig's call). | Convert the spec from "not implementation-ready" to "implementation-ready" via the spec-response workflow.  Removes invented-product-behavior risk for the implementer. |
+| Review 2   | 2026-05-28 | Codex          | Reviewer  | Marked the spec as needs-research before implementation; identified unresolved =py-fsrs= source pin/formula/vector prerequisites, =DRILL_CARD_WEIGHT= semantics reversed against current org-drill, and a quality-mapping conflict with =org-drill-failure-quality=. | Applying the updated spec-review workflow to the moved =docs/design/= spec caught contradictions introduced while preserving Review 1 decisions. |
+| Response 2 | 2026-05-31 | Claude Code    | Responder | Corrected =DRILL_CARD_WEIGHT= to the real SM/Simple8 delta-interpolation (Craig's call to match existing semantics); resolved the quality mapping to honor =org-drill-failure-quality= for the Again boundary with a fixed success sub-mapping (Craig's call); reframed status/open-questions to "Needs research" with the three blocking prerequisites stated honestly; fixed =DRILL_LAST_REVIEWED= ownership (M1) and the algorithm-symbol coverage (M2); flagged the update equations as paraphrased-and-unverified. | Fix the three blockers and two mediums from Review 2.  The B2 reversal traced to a wrong verbal description of SM weight handling in Response 1; this response grounds every claim in the cited =org-drill.el= line. |
 
 * References
 
 - [[https://github.com/open-spaced-repetition/py-fsrs][py-fsrs]] — the canonical Python reference implementation.  Tagged
-  v4.x releases pin FSRS-4.5; v6.x is the current line.
+  v4.x releases pin FSRS-4.5; v6.x is the current line.  The exact
+  pinned tag is resolved during implementation (see =Open questions=).
 - [[https://github.com/open-spaced-repetition/fsrs4anki][fsrs4anki]] — the Anki integration; its wiki has user-facing notes on
   algorithm history and migration.
+- [[https://github-wiki-see.page/m/shigeyukey/fsrs4anki/wiki/The-Algorithm][fsrs4anki Algorithm wiki]] — source of the v4.5 default-parameter
+  tuple and the v4.5 forgetting-curve constants.
 - [[https://expertium.github.io/Algorithm.html][Expertium: A technical explanation of FSRS]] (March 2026, v6-oriented)
   — the most accessible English-language walkthrough of the formulas
   and parameter roles.
 - [[https://help.remnote.com/en/articles/9124137-the-fsrs-spaced-repetition-algorithm][RemNote: The FSRS Spaced Repetition Algorithm]] — third-party
   implementer's overview, useful as a sanity check on terminology.
+- =docs/design/stats-dashboard.org= — sister v0 spec, same
+  DECIDE-marker convention authored by Craig.
