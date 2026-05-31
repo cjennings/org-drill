@@ -386,6 +386,10 @@ drill session, you can either:
 2. Change the entry for its card type in =org-drill-card-type-alist= so that
    items of this type will always be tested, even if they have an empty body.
    See the documentation for =org-drill-card-type-alist= for details.
+3. Set =org-drill-treat-headline-as-card-p= to =t=. This is a global switch:
+   when on, every empty-bodied drill item is tested with its heading as the
+   question, regardless of card type. Useful for hierarchical-notes decks where
+   the heading is the prompt and the answer lives in child items.
 
 
 * Running the drill session

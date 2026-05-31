@@ -414,6 +414,19 @@ even if their bodies are empty."
   :type '(alist :key-type (choice string (const nil))
                 :value-type function))
 
+(defcustom org-drill-treat-headline-as-card-p nil
+  "When non-nil, treat a drill entry with an empty body as a valid card.
+
+By default a drill entry whose body is empty is skipped during a
+session unless its card type opts in via the DRILL-EMPTY-P slot of
+`org-drill-card-type-alist'.  When this is non-nil, an empty-bodied
+entry is presented as a card with the heading itself as the question,
+regardless of card type.  This covers hierarchical-notes decks where
+the heading is the prompt and the answer lives in child entries, and
+decks where the heading alone is the card (upstream issues #30 and #41)."
+  :group 'org-drill-session
+  :type 'boolean)
+
 (defcustom org-drill-card-tags-alist
   '(("explain" nil org-drill-explain-answer-presenter
      org-drill-explain-cleaner))
@@ -925,6 +938,7 @@ regardless of whether the test was successful.")
      '(lambda (val) (memq val '(nil skip warn))))
 (put 'org-drill-use-visible-cloze-face-p 'safe-local-variable 'booleanp)
 (put 'org-drill-hide-item-headings-p 'safe-local-variable 'booleanp)
+(put 'org-drill-treat-headline-as-card-p 'safe-local-variable 'booleanp)
 (put 'org-drill-spaced-repetition-algorithm 'safe-local-variable
      '(lambda (val) (memq val '(simple8 sm5 sm2))))
 (put 'org-drill-sm5-initial-interval 'safe-local-variable 'floatp)
@@ -3343,8 +3357,11 @@ treat empty bodies as meaningful.
 
 A card type that wants empty bodies is one whose entry in
 `org-drill-card-type-alist' has a non-nil third element (the
-DRILL-EMPTY-P slot)."
-  (and (org-drill-entry-empty-p)
+DRILL-EMPTY-P slot).  When `org-drill-treat-headline-as-card-p' is
+non-nil, no empty entry is treated as skippable — the heading itself
+is the card."
+  (and (not org-drill-treat-headline-as-card-p)
+       (org-drill-entry-empty-p)
        (let* ((card-type (org-entry-get (point) "DRILL_CARD_TYPE" nil))
               (card-def (cdr (assoc card-type org-drill-card-type-alist))))
          (or (null card-type)
